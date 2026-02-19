@@ -177,8 +177,106 @@ function AdminLogin({ onLogin }) {
   );
 }
 
+// ─── Edit Student Modal ────────────────────────────────────────────────────
+function EditStudentModal({ student, studentId, onSave, onClose, campuses, sessions }) {
+  const [form, setForm] = useState({
+    name:    student.name,
+    campus:  student.campus,
+    session: student.session,
+  });
+  const [saving, setSaving] = useState(false);
+
+  async function handleSave() {
+    if (!form.name.trim()) return;
+    setSaving(true);
+    await onSave(studentId, form);
+    setSaving(false);
+    onClose();
+  }
+
+  return (
+    <div onClick={onClose} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.85)", zIndex:1000, display:"flex", alignItems:"center", justifyContent:"center", padding:"1.5rem" }}>
+      <div onClick={e => e.stopPropagation()} style={{ background:"var(--surface)", border:"1px solid var(--border)", borderRadius:"16px", padding:"2rem", width:"100%", maxWidth:"500px" }}>
+        <h3 style={{ fontFamily:"'Bebas Neue',cursive", fontSize:"1.6rem", letterSpacing:"0.05em", marginBottom:"1.5rem" }}>✏️ Edit Student</h3>
+        <div style={{ display:"flex", flexDirection:"column", gap:"1rem" }}>
+          <div className="field">
+            <label>Full Name</label>
+            <input type="text" value={form.name} onChange={e => setForm(f => ({ ...f, name:e.target.value }))} placeholder="Full name" />
+          </div>
+          <div className="field">
+            <label>Session</label>
+            <div className="radio-group">
+              {sessions.map(s => (
+                <label key={s} className={`radio-card ${form.session===s?"selected":""}`}>
+                  <input type="radio" name="edit-session" value={s} checked={form.session===s} onChange={() => setForm(f => ({ ...f, session:s }))} />{s}
+                </label>
+              ))}
+            </div>
+          </div>
+          <div className="field">
+            <label>Campus</label>
+            <div className="campus-grid">
+              {campuses.map(c => (
+                <label key={c} className={`campus-card ${form.campus===c?"selected":""}`}>
+                  <input type="radio" name="edit-campus" value={c} checked={form.campus===c} onChange={() => setForm(f => ({ ...f, campus:c }))} />
+                  <span>🏫</span>{c}
+                </label>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div style={{ display:"flex", gap:"0.75rem", marginTop:"1.75rem" }}>
+          <button onClick={handleSave} disabled={saving} className="submit-btn" style={{ margin:0 }}>
+            {saving ? "Saving..." : "Save Changes ✓"}
+          </button>
+          <button onClick={onClose} className="cancel-btn" style={{ padding:"0.9rem 1.25rem", fontSize:"0.9rem" }}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Edit Day Modal ─────────────────────────────────────────────────────────
+function EditDayModal({ studentId, date, entry, onSave, onClose }) {
+  const [steps, setSteps] = useState(String(entry?.steps || ""));
+  const [saving, setSaving] = useState(false);
+  const [err, setErr] = useState("");
+
+  async function handleSave() {
+    const n = Number(steps);
+    if (!steps || n < 1000) { setErr("Minimum 1,000 steps required"); return; }
+    setSaving(true);
+    await onSave(studentId, date, n);
+    setSaving(false);
+    onClose();
+  }
+
+  return (
+    <div onClick={onClose} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.85)", zIndex:1000, display:"flex", alignItems:"center", justifyContent:"center", padding:"1.5rem" }}>
+      <div onClick={e => e.stopPropagation()} style={{ background:"var(--surface)", border:"1px solid var(--border)", borderRadius:"16px", padding:"2rem", width:"100%", maxWidth:"380px" }}>
+        <h3 style={{ fontFamily:"'Bebas Neue',cursive", fontSize:"1.6rem", letterSpacing:"0.05em", marginBottom:"0.5rem" }}>✏️ Edit Day</h3>
+        <p style={{ color:"var(--muted)", fontSize:"0.85rem", marginBottom:"1.5rem" }}>📅 {date}</p>
+        {entry?.img && (
+          <img src={entry.img} alt="Screenshot" style={{ width:"100%", maxHeight:"160px", objectFit:"cover", borderRadius:"8px", marginBottom:"1rem", border:"1px solid var(--border)" }} />
+        )}
+        <div className="field" style={{ marginBottom:"1rem" }}>
+          <label>Step Count <span className="req-note">* Minimum 1,000</span></label>
+          <input type="number" value={steps} min="1000" onChange={e => { setSteps(e.target.value); setErr(""); }} placeholder="e.g. 8000" />
+          {err && <span className="err">{err}</span>}
+        </div>
+        <div style={{ display:"flex", gap:"0.75rem", marginTop:"1.25rem" }}>
+          <button onClick={handleSave} disabled={saving} className="submit-btn" style={{ margin:0 }}>
+            {saving ? "Saving..." : "Save Changes ✓"}
+          </button>
+          <button onClick={onClose} className="cancel-btn" style={{ padding:"0.9rem 1.25rem", fontSize:"0.9rem" }}>Cancel</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── Admin Panel ───────────────────────────────────────────────────────────
-function AdminPanel({ students, onDelete, onDeleteDay, onLogout }) {
+function AdminPanel({ students, onDelete, onDeleteDay, onEditStudent, onEditDay, onLogout }) {
   const [search, setSearch]         = useState("");
   const [dateFilter, setDateFilter] = useState("");
   const [confirmId, setConfirmId]   = useState(null);
@@ -186,6 +284,8 @@ function AdminPanel({ students, onDelete, onDeleteDay, onLogout }) {
   const [deleted, setDeleted]       = useState("");
   const [expanded, setExpanded]     = useState(null);
   const [lightbox, setLightbox]     = useState(null);
+  const [editStudent, setEditStudent] = useState(null);   // { studentId, student }
+  const [editDay, setEditDay]         = useState(null);   // { studentId, date, entry }
 
   const list = Object.entries(students)
     .map(([id, s]) => ({ id, ...s }))
@@ -231,6 +331,35 @@ function AdminPanel({ students, onDelete, onDeleteDay, onLogout }) {
         </div>
       )}
 
+      {editStudent && (
+        <EditStudentModal
+          studentId={editStudent.studentId}
+          student={editStudent.student}
+          campuses={["Lemley Memorial","Broken Arrow","Owasso","Peoria","Riverside","Sand Springs","Health Sciences Center"]}
+          sessions={["AM","PM","All Day"]}
+          onSave={async (id, data) => {
+            await onEditStudent(id, data);
+            setDeleted(`"${data.name}" updated successfully.`);
+            setTimeout(() => setDeleted(""), 4000);
+          }}
+          onClose={() => setEditStudent(null)}
+        />
+      )}
+
+      {editDay && (
+        <EditDayModal
+          studentId={editDay.studentId}
+          date={editDay.date}
+          entry={editDay.entry}
+          onSave={async (studentId, date, newSteps) => {
+            await onEditDay(studentId, date, newSteps);
+            setDeleted(`Day ${date} updated to ${newSteps.toLocaleString()} steps.`);
+            setTimeout(() => setDeleted(""), 4000);
+          }}
+          onClose={() => setEditDay(null)}
+        />
+      )}
+
       <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"1.5rem", flexWrap:"wrap", gap:"1rem" }}>
         <h2 className="lb-title" style={{ marginBottom:0 }}>🛡️ Admin Panel</h2>
         <button onClick={onLogout} className="logout-btn">Sign Out</button>
@@ -271,7 +400,7 @@ function AdminPanel({ students, onDelete, onDeleteDay, onLogout }) {
           )}
           <table className="lb-table">
             <thead>
-              <tr><th>Student ID</th><th>Name</th><th>Campus</th><th>Session</th><th>Days Logged</th><th>Total Steps</th><th>Details</th><th>Action</th></tr>
+              <tr><th>Student ID</th><th>Name</th><th>Campus</th><th>Session</th><th>Days Logged</th><th>Total Steps</th><th>Details</th><th>Actions</th></tr>
             </thead>
             <tbody>
               {list.map(s => (
@@ -289,14 +418,17 @@ function AdminPanel({ students, onDelete, onDeleteDay, onLogout }) {
                       </button>
                     </td>
                     <td>
-                      {confirmId === s.id ? (
-                        <div style={{ display:"flex", gap:"0.4rem" }}>
-                          <button className="confirm-del-btn" onClick={() => handleDelete(s.id)}>Yes, Delete</button>
-                          <button className="cancel-btn" onClick={() => setConfirmId(null)}>Cancel</button>
-                        </div>
-                      ) : (
-                        <button className="delete-btn" onClick={() => setConfirmId(s.id)}>🗑 Delete</button>
-                      )}
+                      <div style={{ display:"flex", gap:"0.4rem", flexWrap:"wrap" }}>
+                        <button className="edit-btn" onClick={() => setEditStudent({ studentId: s.id, student: students[s.id] })}>✏️ Edit</button>
+                        {confirmId === s.id ? (
+                          <>
+                            <button className="confirm-del-btn" onClick={() => handleDelete(s.id)}>Yes, Delete</button>
+                            <button className="cancel-btn" onClick={() => setConfirmId(null)}>Cancel</button>
+                          </>
+                        ) : (
+                          <button className="delete-btn" onClick={() => setConfirmId(s.id)}>🗑 Delete</button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                   {expanded === s.id && s.submittedDates && (
@@ -315,6 +447,7 @@ function AdminPanel({ students, onDelete, onDeleteDay, onLogout }) {
                                 ) : (
                                   <div className="day-no-img">No image</div>
                                 )}
+                                <button className="edit-btn" style={{ fontSize:"0.7rem", padding:"0.3rem 0.5rem", marginTop:"0.25rem" }} onClick={() => setEditDay({ studentId: s.id, date, entry })}>✏️ Edit Steps</button>
                                 {isDayConfirm ? (
                                   <div style={{ display:"flex", gap:"0.3rem", marginTop:"0.25rem" }}>
                                     <button className="confirm-del-btn" style={{ fontSize:"0.7rem", padding:"0.3rem 0.5rem" }} onClick={() => handleDayDelete(s.id, date)}>Yes</button>
@@ -532,6 +665,36 @@ export default function App() {
     await saveStudents(newStudents);
   }, [students]);
 
+  // Edit student profile (name, campus, session) — does NOT touch step totals
+  const handleEditStudent = useCallback(async (studentId, { name, campus, session }) => {
+    const s = students[studentId];
+    if (!s) return;
+    const newStudents = { ...students, [studentId]: { ...s, name, campus, session } };
+    setStudents(newStudents);
+    await saveStudents(newStudents);
+  }, [students]);
+
+  // Edit a specific day's step count — recalculates the student's total
+  const handleEditDay = useCallback(async (studentId, date, newSteps) => {
+    const s = students[studentId];
+    if (!s) return;
+    const oldSteps = s.dailyScreenshots?.[date]?.steps || 0;
+    const newTotal = Math.max(0, s.totalSteps - oldSteps + newSteps);
+    const newStudents = {
+      ...students,
+      [studentId]: {
+        ...s,
+        totalSteps: newTotal,
+        dailyScreenshots: {
+          ...s.dailyScreenshots,
+          [date]: { ...s.dailyScreenshots?.[date], steps: newSteps },
+        },
+      },
+    };
+    setStudents(newStudents);
+    await saveStudents(newStudents);
+  }, [students]);
+
   const allList       = Object.values(students);
   const totalStudents = allList.length;
   const highestSteps  = allList.length ? Math.max(...allList.map(s => s.totalSteps)) : 0;
@@ -647,6 +810,9 @@ export default function App() {
         .cancel-btn:hover { color:var(--text); }
         .view-btn { background:rgba(255,204,0,0.08); border:1px solid rgba(255,204,0,0.25); color:#ffcc00; padding:0.4rem 0.8rem; border-radius:6px; font-size:0.78rem; font-weight:600; cursor:pointer; white-space:nowrap; transition:all 0.2s; }
         .view-btn:hover { background:rgba(255,204,0,0.18); }
+        .edit-btn { background:rgba(80,160,255,0.1); border:1px solid rgba(80,160,255,0.3); color:#66aaff; padding:0.4rem 0.8rem; border-radius:6px; font-size:0.78rem; font-weight:600; cursor:pointer; white-space:nowrap; transition:all 0.2s; }
+        .edit-btn:hover { background:rgba(80,160,255,0.2); border-color:#66aaff; }
+        .view-btn:hover { background:rgba(255,204,0,0.18); }
         .day-card { background:var(--surface); border:1px solid var(--border); border-radius:10px; padding:0.75rem; display:flex; flex-direction:column; gap:0.4rem; min-width:140px; max-width:160px; }
         .day-card-date { font-size:0.75rem; font-weight:700; color:var(--muted); letter-spacing:0.05em; }
         .day-card-steps { font-family:'Bebas Neue',cursive; font-size:1.1rem; color:var(--accent); letter-spacing:0.05em; }
@@ -696,7 +862,7 @@ export default function App() {
           activeTab===5 ? <LeaderboardTable title="☀️ Top 10 All Day Students" students={students} filter="All Day" /> :
           activeTab===6 ? (
             adminAuthed
-              ? <AdminPanel students={students} onDelete={handleDelete} onDeleteDay={handleDeleteDay} onLogout={() => { setAdminAuthed(false); setActiveTab(0); }} />
+              ? <AdminPanel students={students} onDelete={handleDelete} onDeleteDay={handleDeleteDay} onEditStudent={handleEditStudent} onEditDay={handleEditDay} onLogout={() => { setAdminAuthed(false); setActiveTab(0); }} />
               : <AdminLogin onLogin={() => setAdminAuthed(true)} />
           ) : null
         }
