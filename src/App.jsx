@@ -40,24 +40,32 @@ async function loadData() {
 async function saveStudents(students) {
   try {
     await setDoc(DATA_REF(), students);
+    return true;
   } catch (e) {
     console.error("Firebase save error:", e);
+    return false;
   }
 }
 
 // Upload a screenshot file to Firebase Storage, return the public download URL
+// Retries once on failure to handle transient network issues
 async function uploadScreenshot(file, studentId, date) {
-  try {
-    const ext = file.name.split(".").pop() || "jpg";
-    const path = `screenshots/${studentId}/${date}.${ext}`;
-    const storageRef = ref(storage, path);
-    await uploadBytes(storageRef, file);
-    const url = await getDownloadURL(storageRef);
-    return url;
-  } catch (e) {
-    console.error("Screenshot upload error:", e);
-    return null;
+  const mimeToExt = { "image/jpeg":"jpg", "image/png":"png", "image/webp":"webp", "image/gif":"gif", "image/heic":"heic" };
+  const ext = mimeToExt[file.type] || file.name.split(".").pop().toLowerCase() || "jpg";
+  const path = `screenshots/${studentId}/${date}_${Date.now()}.${ext}`;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const storageRef = ref(storage, path);
+      await uploadBytes(storageRef, file);
+      const url = await getDownloadURL(storageRef);
+      return url;
+    } catch (e) {
+      console.error(`Screenshot upload error (attempt ${attempt + 1}):`, e);
+      if (attempt === 1) return null;
+      await new Promise(r => setTimeout(r, 1500)); // wait 1.5s before retry
+    }
   }
+  return null;
 }
 
 // ─── Loader ────────────────────────────────────────────────────────────────
@@ -756,7 +764,15 @@ function SubmitForm({ onSubmit, students }) {
   async function handleSubmit() {
     setSubmitError("");
     const errs = validate();
-    if (Object.keys(errs).length) { setErrors(errs); return; }
+    if (Object.keys(errs).length) {
+      setErrors(errs);
+      // Scroll to the first error so mobile users see it
+      setTimeout(() => {
+        const el = document.querySelector(".has-error");
+        if (el) el.scrollIntoView({ behavior:"smooth", block:"center" });
+      }, 50);
+      return;
+    }
     const sid = form.studentId.trim();
     const existing = students[sid];
     if (existing?.submittedDates?.includes(form.date)) {
@@ -770,6 +786,9 @@ function SubmitForm({ onSubmit, students }) {
     setSuccess(true);
     setForm({ studentId:"", name:"", date:today, steps:"", session:"", campus:"" });
     setScreenshot(null); setPreview(null);
+    // Reset the file input element so the same file can be re-uploaded if needed
+    const fileInput = document.getElementById("ss-input");
+    if (fileInput) fileInput.value = "";
     setTimeout(() => setSuccess(false), 5000);
   }
 
@@ -801,7 +820,7 @@ function SubmitForm({ onSubmit, students }) {
           </div>
           <div className={`field ${errors.steps?"has-error":""}`}>
             <label>Step Count <span className="req-note">* Minimum 1,000 steps</span></label>
-            <input type="number" name="steps" value={form.steps} onChange={handleChange} placeholder="e.g. 10000" min="1000" />
+            <input type="number" name="steps" value={form.steps} onChange={handleChange} placeholder="e.g. 10000" min="1000" max="100000" onKeyDown={e => ["-","e","E","+"].includes(e.key) && e.preventDefault()} />
             {errors.steps && <span className="err">{errors.steps}</span>}
           </div>
           <div className={`field full-width ${errors.session?"has-error":""}`}>
@@ -856,29 +875,42 @@ export default function App() {
 
   useEffect(() => {
     loadData().then(({ students }) => { setStudents(students); setLoading(false); });
+    // Refresh leaderboard data every 30 seconds so students see live updates
+    const interval = setInterval(() => {
+      loadData().then(({ students }) => setStudents(students));
+    }, 30000);
+    return () => clearInterval(interval);
   }, []);
 
   const handleSubmit = useCallback(async (formData) => {
     const { studentId, name, campus, session, steps, date, screenshotFile } = formData;
     const stepCount = Number(steps);
-    const existing = students[studentId];
-    if (existing?.submittedDates?.includes(date))
-      return { error:`Already submitted steps for ${date}. Only one submission per day is allowed.` };
 
-    // Upload screenshot to Firebase Storage, get back a permanent URL
+    // Upload screenshot FIRST before touching the database
     let imgUrl = null;
     if (screenshotFile) {
       imgUrl = await uploadScreenshot(screenshotFile, studentId, date);
-      if (!imgUrl) return { error: "Screenshot upload failed. Please try again." };
+      if (!imgUrl) return { error: "Screenshot upload failed — please check your connection and try again." };
     }
+
+    // Re-fetch fresh data right before saving to prevent stale-state overwrites
+    // (another student may have submitted while this form was being filled out)
+    const { students: freshStudents } = await loadData();
+    const existing = freshStudents[studentId];
+
+    // Double-check duplicate after fresh fetch
+    if (existing?.submittedDates?.includes(date))
+      return { error: `Already submitted steps for ${date}. Only one submission per day is allowed.` };
 
     const prevScreenshots = existing?.dailyScreenshots || {};
     const updatedStudent = existing
       ? { ...existing, name, campus, session, totalSteps: existing.totalSteps + stepCount, submittedDates: [...existing.submittedDates, date], dailyScreenshots: { ...prevScreenshots, [date]: { steps: stepCount, img: imgUrl } } }
       : { name, campus, session, totalSteps: stepCount, submittedDates: [date], dailyScreenshots: { [date]: { steps: stepCount, img: imgUrl } } };
-    const newStudents = { ...students, [studentId]: updatedStudent };
+
+    const newStudents = { ...freshStudents, [studentId]: updatedStudent };
+    const saved = await saveStudents(newStudents);
+    if (!saved) return { error: "Failed to save your submission. Please try again." };
     setStudents(newStudents);
-    await saveStudents(newStudents);
     return { success: true };
   }, [students]);
 
@@ -947,7 +979,6 @@ export default function App() {
 
   const allList       = Object.values(students);
   const totalStudents = allList.length;
-  const highestSteps  = allList.length ? Math.max(...allList.map(s => s.totalSteps)) : 0;
   const totalSteps    = allList.reduce((a, s) => a + s.totalSteps, 0);
   const avgSteps      = allList.length ? Math.round(totalSteps / allList.length) : 0;
 
