@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback } from "react";
-import { db } from "./firebase.js";
-import { doc, getDoc, setDoc, deleteField, updateDoc } from "firebase/firestore";
+import React, { useState, useEffect, useCallback } from "react";
+import { db, storage } from "./firebase.js";
+import { doc, getDoc, setDoc } from "firebase/firestore";
+import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 
 const CAMPUSES = [
   "Lemley Memorial", "Broken Arrow", "Owasso", "Peoria",
@@ -41,6 +42,21 @@ async function saveStudents(students) {
     await setDoc(DATA_REF(), students);
   } catch (e) {
     console.error("Firebase save error:", e);
+  }
+}
+
+// Upload a screenshot file to Firebase Storage, return the public download URL
+async function uploadScreenshot(file, studentId, date) {
+  try {
+    const ext = file.name.split(".").pop() || "jpg";
+    const path = `screenshots/${studentId}/${date}.${ext}`;
+    const storageRef = ref(storage, path);
+    await uploadBytes(storageRef, file);
+    const url = await getDownloadURL(storageRef);
+    return url;
+  } catch (e) {
+    console.error("Screenshot upload error:", e);
+    return null;
   }
 }
 
@@ -489,15 +505,31 @@ function AdminPanel({ students, onDelete, onDeleteDay, onEditStudent, onEditDay,
 // ─── All Students Leaderboard ──────────────────────────────────────────────
 function AllStudentsLeaderboard({ students }) {
   const [sessionFilter, setSessionFilter] = useState("All");
+  const [search, setSearch]               = useState("");
+  const highlightRef                      = React.useRef(null);
 
-  const filtered = Object.entries(students)
+  // Full ranked list (session filter only, no hiding by search)
+  const ranked = Object.entries(students)
     .map(([id, s]) => ({ id, ...s }))
     .filter(s => sessionFilter === "All" || s.session === sessionFilter)
     .sort((a, b) => b.totalSteps - a.totalSteps);
 
+  const searchLower = search.trim().toLowerCase();
+  // Index of the highlighted row (-1 if none)
+  const highlightIdx = searchLower
+    ? ranked.findIndex(s => s.name.toLowerCase().includes(searchLower))
+    : -1;
+
+  // Scroll to highlighted row whenever it changes
+  React.useEffect(() => {
+    if (highlightRef.current) {
+      highlightRef.current.scrollIntoView({ behavior:"smooth", block:"center" });
+    }
+  }, [highlightIdx]);
+
   return (
     <div className="leaderboard-wrap">
-      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"1.25rem", flexWrap:"wrap", gap:"1rem" }}>
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"1rem", flexWrap:"wrap", gap:"1rem" }}>
         <h2 className="lb-title" style={{ marginBottom:0 }}>🏅 All Students</h2>
         <div style={{ display:"flex", alignItems:"center", gap:"0.6rem" }}>
           <label style={{ fontSize:"0.78rem", fontWeight:700, letterSpacing:"0.05em", textTransform:"uppercase", color:"var(--muted)" }}>Session</label>
@@ -514,7 +546,26 @@ function AllStudentsLeaderboard({ students }) {
         </div>
       </div>
 
-      {filtered.length === 0 ? (
+      {/* Search bar — highlights your row, doesn't hide others */}
+      <div className="field" style={{ marginBottom:"1.25rem", maxWidth:"360px" }}>
+        <label>Find Yourself</label>
+        <input
+          type="text"
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Type your name to highlight your row..."
+        />
+        {search && highlightIdx === -1 && (
+          <span className="err">No match found in this session filter</span>
+        )}
+        {search && highlightIdx !== -1 && (
+          <span style={{ fontSize:"0.78rem", color:"var(--accent2)", fontWeight:600 }}>
+            ✓ You are ranked #{highlightIdx + 1} of {ranked.length}
+          </span>
+        )}
+      </div>
+
+      {ranked.length === 0 ? (
         <div className="empty-state"><span>🏃</span><p>No students found for this session.</p></div>
       ) : (
         <table className="lb-table">
@@ -522,16 +573,23 @@ function AllStudentsLeaderboard({ students }) {
             <tr><th>Rank</th><th>Name</th><th>Campus</th><th>Session</th><th>Days Logged</th><th>Total Steps</th></tr>
           </thead>
           <tbody>
-            {filtered.map((s, i) => (
-              <tr key={s.id} className={i<3?`top-${i+1}`:""}>
-                <td><MedalIcon rank={i+1}/></td>
-                <td><strong>{s.name}</strong></td>
-                <td>{s.campus}</td>
-                <td><span className={`badge badge-${s.session.replace(" ","")}`}>{s.session}</span></td>
-                <td style={{ textAlign:"center" }}>{s.submittedDates?.length || 0}</td>
-                <td className="steps-cell">{s.totalSteps.toLocaleString()}</td>
-              </tr>
-            ))}
+            {ranked.map((s, i) => {
+              const isHighlighted = i === highlightIdx;
+              return (
+                <tr
+                  key={s.id}
+                  ref={isHighlighted ? highlightRef : null}
+                  className={isHighlighted ? "row-highlight" : i<3 ? `top-${i+1}` : ""}
+                >
+                  <td><MedalIcon rank={i+1}/></td>
+                  <td><strong>{s.name}</strong>{isHighlighted && <span style={{ marginLeft:"0.5rem", fontSize:"0.72rem", background:"var(--accent)", color:"#fff", padding:"0.1rem 0.4rem", borderRadius:"4px", fontWeight:700 }}>YOU</span>}</td>
+                  <td>{s.campus}</td>
+                  <td><span className={`badge badge-${s.session.replace(" ","")}`}>{s.session}</span></td>
+                  <td style={{ textAlign:"center" }}>{s.submittedDates?.length || 0}</td>
+                  <td className="steps-cell">{s.totalSteps.toLocaleString()}</td>
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       )}
@@ -706,7 +764,7 @@ function SubmitForm({ onSubmit, students }) {
       return;
     }
     setSubmitting(true);
-    const result = await onSubmit({ ...form, studentId:sid, screenshotPreview:preview });
+    const result = await onSubmit({ ...form, studentId:sid, screenshotFile:screenshot });
     setSubmitting(false);
     if (result?.error) { setSubmitError(result.error); return; }
     setSuccess(true);
@@ -782,7 +840,7 @@ function SubmitForm({ onSubmit, students }) {
           </div>
         </div>
         <button onClick={handleSubmit} className="submit-btn" disabled={submitting}>
-          {submitting ? "Submitting..." : "Submit My Steps 🏃"}
+          {submitting ? "Uploading & Saving..." : "Submit My Steps 🏃"}
         </button>
       </div>
     </div>
@@ -801,15 +859,23 @@ export default function App() {
   }, []);
 
   const handleSubmit = useCallback(async (formData) => {
-    const { studentId, name, campus, session, steps, date, screenshotPreview } = formData;
+    const { studentId, name, campus, session, steps, date, screenshotFile } = formData;
     const stepCount = Number(steps);
     const existing = students[studentId];
     if (existing?.submittedDates?.includes(date))
       return { error:`Already submitted steps for ${date}. Only one submission per day is allowed.` };
+
+    // Upload screenshot to Firebase Storage, get back a permanent URL
+    let imgUrl = null;
+    if (screenshotFile) {
+      imgUrl = await uploadScreenshot(screenshotFile, studentId, date);
+      if (!imgUrl) return { error: "Screenshot upload failed. Please try again." };
+    }
+
     const prevScreenshots = existing?.dailyScreenshots || {};
     const updatedStudent = existing
-      ? { ...existing, name, campus, session, totalSteps: existing.totalSteps + stepCount, submittedDates: [...existing.submittedDates, date], dailyScreenshots: { ...prevScreenshots, [date]: { steps: stepCount, img: screenshotPreview } } }
-      : { name, campus, session, totalSteps: stepCount, submittedDates: [date], dailyScreenshots: { [date]: { steps: stepCount, img: screenshotPreview } } };
+      ? { ...existing, name, campus, session, totalSteps: existing.totalSteps + stepCount, submittedDates: [...existing.submittedDates, date], dailyScreenshots: { ...prevScreenshots, [date]: { steps: stepCount, img: imgUrl } } }
+      : { name, campus, session, totalSteps: stepCount, submittedDates: [date], dailyScreenshots: { [date]: { steps: stepCount, img: imgUrl } } };
     const newStudents = { ...students, [studentId]: updatedStudent };
     setStudents(newStudents);
     await saveStudents(newStudents);
@@ -964,6 +1030,7 @@ export default function App() {
         .lb-table tbody tr.top-1 { background:rgba(255,215,0,0.06); }
         .lb-table tbody tr.top-2 { background:rgba(192,192,192,0.05); }
         .lb-table tbody tr.top-3 { background:rgba(205,127,50,0.05); }
+        .lb-table tbody tr.row-highlight { background:rgba(232,28,28,0.18); outline:2px solid var(--accent); outline-offset:-2px; }
         .lb-table tbody td { padding:0.9rem 1rem; font-size:0.9rem; vertical-align:middle; }
         .lb-table tbody td:first-child { border-radius:10px 0 0 10px; }
         .lb-table tbody td:last-child  { border-radius:0 10px 10px 0; }
