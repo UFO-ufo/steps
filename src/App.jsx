@@ -237,16 +237,21 @@ function EditStudentModal({ student, studentId, onSave, onClose, campuses, sessi
 }
 
 // ─── Edit Day Modal ─────────────────────────────────────────────────────────
-function EditDayModal({ studentId, date, entry, onSave, onClose }) {
-  const [steps, setSteps] = useState(String(entry?.steps || ""));
+function EditDayModal({ studentId, date, entry, existingDates, onSave, onClose }) {
+  const [steps, setSteps]   = useState(String(entry?.steps || ""));
+  const [newDate, setNewDate] = useState(date);
   const [saving, setSaving] = useState(false);
-  const [err, setErr] = useState("");
+  const [err, setErr]       = useState("");
 
   async function handleSave() {
     const n = Number(steps);
     if (!steps || n < 1000) { setErr("Minimum 1,000 steps required"); return; }
+    if (!newDate) { setErr("Date is required"); return; }
+    if (newDate !== date && existingDates.includes(newDate)) {
+      setErr(`A submission for ${newDate} already exists for this student`); return;
+    }
     setSaving(true);
-    await onSave(studentId, date, n);
+    await onSave(studentId, date, n, newDate);
     setSaving(false);
     onClose();
   }
@@ -254,11 +259,14 @@ function EditDayModal({ studentId, date, entry, onSave, onClose }) {
   return (
     <div onClick={onClose} style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.85)", zIndex:1000, display:"flex", alignItems:"center", justifyContent:"center", padding:"1.5rem" }}>
       <div onClick={e => e.stopPropagation()} style={{ background:"var(--surface)", border:"1px solid var(--border)", borderRadius:"16px", padding:"2rem", width:"100%", maxWidth:"380px" }}>
-        <h3 style={{ fontFamily:"'Bebas Neue',cursive", fontSize:"1.6rem", letterSpacing:"0.05em", marginBottom:"0.5rem" }}>✏️ Edit Day</h3>
-        <p style={{ color:"var(--muted)", fontSize:"0.85rem", marginBottom:"1.5rem" }}>📅 {date}</p>
+        <h3 style={{ fontFamily:"'Bebas Neue',cursive", fontSize:"1.6rem", letterSpacing:"0.05em", marginBottom:"1.5rem" }}>✏️ Edit Day</h3>
         {entry?.img && (
           <img src={entry.img} alt="Screenshot" style={{ width:"100%", maxHeight:"160px", objectFit:"cover", borderRadius:"8px", marginBottom:"1rem", border:"1px solid var(--border)" }} />
         )}
+        <div className="field" style={{ marginBottom:"1rem" }}>
+          <label>Date <span className="req-note">* Any date in 2026</span></label>
+          <input type="date" value={newDate} min="2026-01-01" max="2026-12-31" onChange={e => { setNewDate(e.target.value); setErr(""); }} />
+        </div>
         <div className="field" style={{ marginBottom:"1rem" }}>
           <label>Step Count <span className="req-note">* Minimum 1,000</span></label>
           <input type="number" value={steps} min="1000" onChange={e => { setSteps(e.target.value); setErr(""); }} placeholder="e.g. 8000" />
@@ -351,9 +359,13 @@ function AdminPanel({ students, onDelete, onDeleteDay, onEditStudent, onEditDay,
           studentId={editDay.studentId}
           date={editDay.date}
           entry={editDay.entry}
-          onSave={async (studentId, date, newSteps) => {
-            await onEditDay(studentId, date, newSteps);
-            setDeleted(`Day ${date} updated to ${newSteps.toLocaleString()} steps.`);
+          existingDates={students[editDay.studentId]?.submittedDates || []}
+          onSave={async (studentId, date, newSteps, newDate) => {
+            await onEditDay(studentId, date, newSteps, newDate);
+            const msg = newDate !== date
+              ? `Day moved from ${date} to ${newDate} with ${newSteps.toLocaleString()} steps.`
+              : `Day ${date} updated to ${newSteps.toLocaleString()} steps.`;
+            setDeleted(msg);
             setTimeout(() => setDeleted(""), 4000);
           }}
           onClose={() => setEditDay(null)}
@@ -674,20 +686,27 @@ export default function App() {
     await saveStudents(newStudents);
   }, [students]);
 
-  // Edit a specific day's step count — recalculates the student's total
-  const handleEditDay = useCallback(async (studentId, date, newSteps) => {
+  // Edit a specific day's step count and/or date — recalculates the student's total
+  const handleEditDay = useCallback(async (studentId, oldDate, newSteps, newDate) => {
     const s = students[studentId];
     if (!s) return;
-    const oldSteps = s.dailyScreenshots?.[date]?.steps || 0;
+    const oldSteps = s.dailyScreenshots?.[oldDate]?.steps || 0;
     const newTotal = Math.max(0, s.totalSteps - oldSteps + newSteps);
+    // Remove old date entry, add new one (may be same date)
+    const oldScreenshots = { ...s.dailyScreenshots };
+    const oldEntry = oldScreenshots[oldDate] || {};
+    delete oldScreenshots[oldDate];
+    const newDates = s.submittedDates.filter(d => d !== oldDate);
+    if (!newDates.includes(newDate)) newDates.push(newDate);
     const newStudents = {
       ...students,
       [studentId]: {
         ...s,
         totalSteps: newTotal,
+        submittedDates: newDates,
         dailyScreenshots: {
-          ...s.dailyScreenshots,
-          [date]: { ...s.dailyScreenshots?.[date], steps: newSteps },
+          ...oldScreenshots,
+          [newDate]: { ...oldEntry, steps: newSteps },
         },
       },
     };
@@ -830,14 +849,12 @@ export default function App() {
 
       <div className="hero">
         <div className="hero-inner">
-          <div className="hero-badge">🏆 Step Challenge 2026</div>
           <h1>TULSA TECH <span>STUDENT</span> WALKING CHALLENGE</h1>
           <p className="hero-sub">Log your steps daily, build your total, and climb the leaderboard!</p>
           <div className="stats-bar">
             <div className="stat-item"><span className="stat-val">{totalStudents}</span><span className="stat-lbl">Students</span></div>
-            <div className="stat-item"><span className="stat-val">{highestSteps.toLocaleString()}</span><span className="stat-lbl">Highest Total</span></div>
+            <div className="stat-item"><span className="stat-val">{totalSteps.toLocaleString()}</span><span className="stat-lbl">Total Steps</span></div>
             <div className="stat-item"><span className="stat-val">{avgSteps.toLocaleString()}</span><span className="stat-lbl">Avg Total Steps</span></div>
-            <div className="stat-item"><span className="stat-val">{totalSteps.toLocaleString()}</span><span className="stat-lbl">Combined Steps</span></div>
           </div>
         </div>
       </div>
