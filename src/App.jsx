@@ -543,11 +543,11 @@ export default function App() {
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=Bebas+Neue&family=DM+Sans:wght@400;500;700&display=swap');
         *, *::before, *::after { box-sizing:border-box; margin:0; padding:0; }
-        :root { --bg:#0a0000; --surface:#130000; --surface2:#1c0000; --border:#3a0a0a; --accent:#e81c1c; --accent2:#ff5252; --accent3:#ff8a00; --text:#f5e8e8; --muted:#8a6060; }
+        :root { --bg:#000000; --surface:#111111; --surface2:#1a1a1a; --border:#333333; --accent:#e81c1c; --accent2:#ff3333; --accent3:#ff5555; --text:#ffffff; --muted:#888888; }
         body { background:var(--bg); color:var(--text); font-family:'DM Sans',sans-serif; min-height:100vh; }
-        .hero { background:linear-gradient(135deg,#0a0000 0%,#1a0000 50%,#0f0000 100%); border-bottom:1px solid var(--border); padding:2.5rem 1.5rem 0; position:relative; overflow:hidden; }
-        .hero::before { content:''; position:absolute; top:-60%; left:-20%; width:60%; height:200%; background:radial-gradient(ellipse,rgba(232,28,28,0.12) 0%,transparent 70%); pointer-events:none; }
-        .hero::after  { content:''; position:absolute; top:-40%; right:-10%; width:50%; height:180%; background:radial-gradient(ellipse,rgba(180,0,0,0.08) 0%,transparent 70%); pointer-events:none; }
+        .hero { background:linear-gradient(135deg,#000000 0%,#111111 50%,#000000 100%); border-bottom:1px solid var(--border); padding:2.5rem 1.5rem 0; position:relative; overflow:hidden; }
+        .hero::before { content:''; position:absolute; top:-60%; left:-20%; width:60%; height:200%; background:radial-gradient(ellipse,rgba(232,28,28,0.15) 0%,transparent 70%); pointer-events:none; }
+        .hero::after  { content:''; position:absolute; top:-40%; right:-10%; width:50%; height:180%; background:radial-gradient(ellipse,rgba(232,28,28,0.08) 0%,transparent 70%); pointer-events:none; }
         .hero-inner { max-width:1100px; margin:0 auto; position:relative; z-index:1; }
         .hero-badge { display:inline-flex; align-items:center; gap:0.4rem; background:rgba(232,28,28,0.12); border:1px solid rgba(232,28,28,0.4); color:var(--accent2); font-size:0.75rem; font-weight:700; letter-spacing:0.1em; text-transform:uppercase; padding:0.3rem 0.8rem; border-radius:100px; margin-bottom:1rem; }
         .hero h1 { font-family:'Bebas Neue',cursive; font-size:clamp(2rem,5.5vw,4rem); line-height:1; letter-spacing:0.02em; color:var(--text); margin-bottom:0.5rem; }
@@ -583,8 +583,8 @@ export default function App() {
         .req-note { font-size:0.68rem; font-weight:500; text-transform:none; letter-spacing:0; color:var(--accent2); margin-left:0.3rem; }
         input[type="text"], input[type="number"], input[type="date"], input[type="password"] { background:var(--surface2); border:1px solid var(--border); color:var(--text); font-family:'DM Sans',sans-serif; font-size:0.95rem; padding:0.75rem 1rem; border-radius:8px; outline:none; transition:border-color 0.2s; width:100%; -webkit-text-fill-color:var(--text); }
         input[type="text"]::placeholder, input[type="number"]::placeholder, input[type="password"]::placeholder { color:var(--muted); opacity:1; }
-        input[type="text"] { background:var(--surface2); color:#000; -webkit-text-fill-color:#000; }
-        input[type="text"]::placeholder { color:#666; }
+        input[type="text"] { background:var(--surface2); color:#ffffff; -webkit-text-fill-color:#ffffff; }
+        input[type="text"]::placeholder { color:#888; }
         input[type="text"]:focus, input[type="number"]:focus, input[type="date"]:focus, input[type="password"]:focus { border-color:var(--accent); }
         .has-error input, .has-error .upload-zone { border-color:#ff4f4f !important; }
         .err { font-size:0.78rem; color:#ff6b6b; font-weight:500; }
