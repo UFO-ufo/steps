@@ -535,7 +535,8 @@ export default function App() {
   const allList       = Object.values(students);
   const totalStudents = allList.length;
   const highestSteps  = allList.length ? Math.max(...allList.map(s => s.totalSteps)) : 0;
-  const avgSteps      = allList.length ? Math.round(allList.reduce((a,s) => a+s.totalSteps,0)/allList.length) : 0;
+  const totalSteps    = allList.reduce((a, s) => a + s.totalSteps, 0);
+  const avgSteps      = allList.length ? Math.round(totalSteps / allList.length) : 0;
 
   return (
     <>
@@ -670,6 +671,7 @@ export default function App() {
             <div className="stat-item"><span className="stat-val">{totalStudents}</span><span className="stat-lbl">Students</span></div>
             <div className="stat-item"><span className="stat-val">{highestSteps.toLocaleString()}</span><span className="stat-lbl">Highest Total</span></div>
             <div className="stat-item"><span className="stat-val">{avgSteps.toLocaleString()}</span><span className="stat-lbl">Avg Total Steps</span></div>
+            <div className="stat-item"><span className="stat-val">{totalSteps.toLocaleString()}</span><span className="stat-lbl">Combined Steps</span></div>
           </div>
         </div>
       </div>
