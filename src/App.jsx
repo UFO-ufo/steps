@@ -9,7 +9,8 @@ const CAMPUSES = [
 const SESSIONS = ["AM", "PM", "All Day"];
 const TABS = [
   "Submit Steps", "Campus Average", "Highest Steps",
-  "Highest Steps AM", "Highest Steps PM", "Highest Steps All Day", "Admin",
+  "Highest Steps AM", "Highest Steps PM", "Highest Steps All Day",
+  "All Students", "My Submissions", "Admin",
 ];
 
 const ADMIN_USER = "Student Advisory";
@@ -485,6 +486,170 @@ function AdminPanel({ students, onDelete, onDeleteDay, onEditStudent, onEditDay,
   );
 }
 
+// ─── All Students Leaderboard ──────────────────────────────────────────────
+function AllStudentsLeaderboard({ students }) {
+  const [sessionFilter, setSessionFilter] = useState("All");
+
+  const filtered = Object.entries(students)
+    .map(([id, s]) => ({ id, ...s }))
+    .filter(s => sessionFilter === "All" || s.session === sessionFilter)
+    .sort((a, b) => b.totalSteps - a.totalSteps);
+
+  return (
+    <div className="leaderboard-wrap">
+      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:"1.25rem", flexWrap:"wrap", gap:"1rem" }}>
+        <h2 className="lb-title" style={{ marginBottom:0 }}>🏅 All Students</h2>
+        <div style={{ display:"flex", alignItems:"center", gap:"0.6rem" }}>
+          <label style={{ fontSize:"0.78rem", fontWeight:700, letterSpacing:"0.05em", textTransform:"uppercase", color:"var(--muted)" }}>Session</label>
+          <select
+            value={sessionFilter}
+            onChange={e => setSessionFilter(e.target.value)}
+            style={{ background:"var(--surface2)", border:"1px solid var(--border)", color:"var(--text)", fontFamily:"'DM Sans',sans-serif", fontSize:"0.9rem", padding:"0.5rem 0.9rem", borderRadius:"8px", cursor:"pointer", outline:"none" }}
+          >
+            <option value="All">All Sessions</option>
+            <option value="AM">AM</option>
+            <option value="PM">PM</option>
+            <option value="All Day">All Day</option>
+          </select>
+        </div>
+      </div>
+
+      {filtered.length === 0 ? (
+        <div className="empty-state"><span>🏃</span><p>No students found for this session.</p></div>
+      ) : (
+        <table className="lb-table">
+          <thead>
+            <tr><th>Rank</th><th>Name</th><th>Campus</th><th>Session</th><th>Days Logged</th><th>Total Steps</th></tr>
+          </thead>
+          <tbody>
+            {filtered.map((s, i) => (
+              <tr key={s.id} className={i<3?`top-${i+1}`:""}>
+                <td><MedalIcon rank={i+1}/></td>
+                <td><strong>{s.name}</strong></td>
+                <td>{s.campus}</td>
+                <td><span className={`badge badge-${s.session.replace(" ","")}`}>{s.session}</span></td>
+                <td style={{ textAlign:"center" }}>{s.submittedDates?.length || 0}</td>
+                <td className="steps-cell">{s.totalSteps.toLocaleString()}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+// ─── My Submissions ─────────────────────────────────────────────────────────
+function MySubmissions({ students }) {
+  const [studentId, setStudentId] = useState("");
+  const [name, setName]           = useState("");
+  const [result, setResult]       = useState(null);   // null | "found" | "notfound" | "mismatch"
+  const [student, setStudent]     = useState(null);
+
+  function handleLookup() {
+    const sid = studentId.trim();
+    const nm  = name.trim().toLowerCase();
+    if (!sid || !nm) return;
+    const s = students[sid];
+    if (!s) { setResult("notfound"); setStudent(null); return; }
+    if (s.name.toLowerCase() !== nm) { setResult("mismatch"); setStudent(null); return; }
+    setResult("found");
+    setStudent({ ...s, id: sid });
+  }
+
+  return (
+    <div style={{ maxWidth:"680px", margin:"0 auto" }}>
+      <div className="form-header">
+        <div className="form-icon">📋</div>
+        <h2>My Submissions</h2>
+        <p>Enter your Student ID and full name to view your step history</p>
+      </div>
+
+      <div className="step-form" style={{ marginBottom:"1.5rem" }}>
+        <div className="form-grid">
+          <div className="field">
+            <label>Student ID</label>
+            <input
+              type="text"
+              value={studentId}
+              onChange={e => { setStudentId(e.target.value); setResult(null); }}
+              placeholder="Enter your student ID"
+              autoComplete="off"
+              onKeyDown={e => e.key === "Enter" && handleLookup()}
+            />
+          </div>
+          <div className="field">
+            <label>Full Name</label>
+            <input
+              type="text"
+              value={name}
+              onChange={e => { setName(e.target.value); setResult(null); }}
+              placeholder="Enter your full name"
+              autoComplete="off"
+              onKeyDown={e => e.key === "Enter" && handleLookup()}
+            />
+          </div>
+        </div>
+        <button onClick={handleLookup} className="submit-btn" disabled={!studentId.trim() || !name.trim()}>
+          Look Up My Steps 🔍
+        </button>
+      </div>
+
+      {result === "notfound" && (
+        <div className="error-banner">⚠️ No record found for that Student ID. Have you submitted steps yet?</div>
+      )}
+      {result === "mismatch" && (
+        <div className="error-banner">⚠️ The name you entered doesn't match our records for that Student ID.</div>
+      )}
+
+      {result === "found" && student && (
+        <div style={{ animation:"fadeIn 0.35s ease" }}>
+          {/* Summary card */}
+          <div style={{ background:"var(--surface)", border:"1px solid var(--border)", borderRadius:"14px", padding:"1.5rem", marginBottom:"1.5rem" }}>
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", flexWrap:"wrap", gap:"1rem", marginBottom:"1.25rem" }}>
+              <div>
+                <div style={{ fontFamily:"'Bebas Neue',cursive", fontSize:"1.6rem", letterSpacing:"0.05em" }}>{student.name}</div>
+                <div style={{ color:"var(--muted)", fontSize:"0.85rem" }}>{student.campus} · <span className={`badge badge-${student.session.replace(" ","")}`}>{student.session}</span></div>
+              </div>
+              <div style={{ textAlign:"right" }}>
+                <div style={{ fontFamily:"'Bebas Neue',cursive", fontSize:"2.2rem", color:"var(--accent)", letterSpacing:"0.05em" }}>{student.totalSteps.toLocaleString()}</div>
+                <div style={{ color:"var(--muted)", fontSize:"0.72rem", textTransform:"uppercase", letterSpacing:"0.1em" }}>Total Steps</div>
+              </div>
+            </div>
+            <div style={{ display:"flex", gap:"1.5rem", flexWrap:"wrap" }}>
+              <div><span style={{ fontFamily:"'Bebas Neue',cursive", fontSize:"1.3rem", color:"var(--accent2)" }}>{student.submittedDates?.length || 0}</span> <span style={{ color:"var(--muted)", fontSize:"0.8rem" }}>Days Logged</span></div>
+              <div><span style={{ fontFamily:"'Bebas Neue',cursive", fontSize:"1.3rem", color:"var(--accent2)" }}>{student.submittedDates?.length ? Math.round(student.totalSteps / student.submittedDates.length).toLocaleString() : 0}</span> <span style={{ color:"var(--muted)", fontSize:"0.8rem" }}>Avg Steps/Day</span></div>
+            </div>
+          </div>
+
+          {/* Day-by-day history */}
+          <h3 style={{ fontFamily:"'Bebas Neue',cursive", fontSize:"1.4rem", letterSpacing:"0.05em", marginBottom:"1rem" }}>📅 Submission History</h3>
+          {(!student.submittedDates || student.submittedDates.length === 0) ? (
+            <p style={{ color:"var(--muted)" }}>No submissions yet.</p>
+          ) : (
+            <div style={{ display:"flex", flexDirection:"column", gap:"0.6rem" }}>
+              {[...student.submittedDates].sort().reverse().map(date => {
+                const entry = student.dailyScreenshots?.[date];
+                return (
+                  <div key={date} style={{ background:"var(--surface)", border:"1px solid var(--border)", borderRadius:"10px", padding:"0.9rem 1.1rem", display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:"0.5rem" }}>
+                    <div style={{ display:"flex", alignItems:"center", gap:"0.75rem" }}>
+                      <span style={{ fontSize:"1.1rem" }}>📅</span>
+                      <span style={{ fontWeight:600 }}>{date}</span>
+                    </div>
+                    <div style={{ fontFamily:"'Bebas Neue',cursive", fontSize:"1.3rem", color:"var(--accent)", letterSpacing:"0.05em" }}>
+                      {entry?.steps?.toLocaleString() || "?"} steps
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ─── Submit Form ───────────────────────────────────────────────────────────
 function SubmitForm({ onSubmit, students }) {
   const today = todayStr();
@@ -862,8 +1027,8 @@ export default function App() {
       <div className="tabs-bar">
         <div className="tabs-inner">
           {TABS.map((tab, i) => (
-            <button key={tab} className={`tab-btn ${i===6?"admin-tab":""} ${activeTab===i?"active":""}`} onClick={() => { setActiveTab(i); if(i!==6) setAdminAuthed(false); }}>
-              {i===6 ? "🔒 Admin" : tab}
+            <button key={tab} className={`tab-btn ${i===8?"admin-tab":""} ${activeTab===i?"active":""}`} onClick={() => { setActiveTab(i); if(i!==8) setAdminAuthed(false); }}>
+              {i===8 ? "🔒 Admin" : tab}
             </button>
           ))}
         </div>
@@ -877,7 +1042,9 @@ export default function App() {
           activeTab===3 ? <LeaderboardTable title="🌅 Top 10 AM Students" students={students} filter="AM" /> :
           activeTab===4 ? <LeaderboardTable title="🌆 Top 10 PM Students" students={students} filter="PM" /> :
           activeTab===5 ? <LeaderboardTable title="☀️ Top 10 All Day Students" students={students} filter="All Day" /> :
-          activeTab===6 ? (
+          activeTab===6 ? <AllStudentsLeaderboard students={students} /> :
+          activeTab===7 ? <MySubmissions students={students} /> :
+          activeTab===8 ? (
             adminAuthed
               ? <AdminPanel students={students} onDelete={handleDelete} onDeleteDay={handleDeleteDay} onEditStudent={handleEditStudent} onEditDay={handleEditDay} onLogout={() => { setAdminAuthed(false); setActiveTab(0); }} />
               : <AdminLogin onLogin={() => setAdminAuthed(true)} />
