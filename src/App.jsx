@@ -774,11 +774,6 @@ function SubmitForm({ onSubmit, students }) {
       return;
     }
     const sid = form.studentId.trim();
-    const existing = students[sid];
-    if (existing?.submittedDates?.includes(form.date)) {
-      setSubmitError(`You have already submitted steps for ${form.date}. Only one submission per day is allowed.`);
-      return;
-    }
     setSubmitting(true);
     const result = await onSubmit({ ...form, studentId:sid, screenshotFile:screenshot });
     setSubmitting(false);
@@ -873,11 +868,15 @@ export default function App() {
   const [loading, setLoading]         = useState(true);
   const [adminAuthed, setAdminAuthed] = useState(false);
 
+  const submittingRef = React.useRef(false);
+
   useEffect(() => {
     loadData().then(({ students }) => { setStudents(students); setLoading(false); });
-    // Refresh leaderboard data every 30 seconds so students see live updates
+    // Refresh leaderboard data every 30 seconds — but never during an active submission
     const interval = setInterval(() => {
-      loadData().then(({ students }) => setStudents(students));
+      if (!submittingRef.current) {
+        loadData().then(({ students }) => setStudents(students));
+      }
     }, 30000);
     return () => clearInterval(interval);
   }, []);
@@ -886,32 +885,36 @@ export default function App() {
     const { studentId, name, campus, session, steps, date, screenshotFile } = formData;
     const stepCount = Number(steps);
 
-    // Upload screenshot FIRST before touching the database
-    let imgUrl = null;
-    if (screenshotFile) {
-      imgUrl = await uploadScreenshot(screenshotFile, studentId, date);
-      if (!imgUrl) return { error: "Screenshot upload failed — please check your connection and try again." };
+    submittingRef.current = true;
+    try {
+      // Upload screenshot FIRST before touching the database
+      let imgUrl = null;
+      if (screenshotFile) {
+        imgUrl = await uploadScreenshot(screenshotFile, studentId, date);
+        if (!imgUrl) return { error: "Screenshot upload failed — please check your connection and try again." };
+      }
+
+      // Re-fetch fresh data right before saving to prevent stale-state overwrites
+      const { students: freshStudents } = await loadData();
+      const existing = freshStudents[studentId];
+
+      // Duplicate check using fresh data
+      if (existing?.submittedDates?.includes(date))
+        return { error: `Already submitted steps for ${date}. Only one submission per day is allowed.` };
+
+      const prevScreenshots = existing?.dailyScreenshots || {};
+      const updatedStudent = existing
+        ? { ...existing, name, campus, session, totalSteps: existing.totalSteps + stepCount, submittedDates: [...existing.submittedDates, date], dailyScreenshots: { ...prevScreenshots, [date]: { steps: stepCount, img: imgUrl } } }
+        : { name, campus, session, totalSteps: stepCount, submittedDates: [date], dailyScreenshots: { [date]: { steps: stepCount, img: imgUrl } } };
+
+      const newStudents = { ...freshStudents, [studentId]: updatedStudent };
+      const saved = await saveStudents(newStudents);
+      if (!saved) return { error: "Failed to save your submission. Please try again." };
+      setStudents(newStudents);
+      return { success: true };
+    } finally {
+      submittingRef.current = false;
     }
-
-    // Re-fetch fresh data right before saving to prevent stale-state overwrites
-    // (another student may have submitted while this form was being filled out)
-    const { students: freshStudents } = await loadData();
-    const existing = freshStudents[studentId];
-
-    // Double-check duplicate after fresh fetch
-    if (existing?.submittedDates?.includes(date))
-      return { error: `Already submitted steps for ${date}. Only one submission per day is allowed.` };
-
-    const prevScreenshots = existing?.dailyScreenshots || {};
-    const updatedStudent = existing
-      ? { ...existing, name, campus, session, totalSteps: existing.totalSteps + stepCount, submittedDates: [...existing.submittedDates, date], dailyScreenshots: { ...prevScreenshots, [date]: { steps: stepCount, img: imgUrl } } }
-      : { name, campus, session, totalSteps: stepCount, submittedDates: [date], dailyScreenshots: { [date]: { steps: stepCount, img: imgUrl } } };
-
-    const newStudents = { ...freshStudents, [studentId]: updatedStudent };
-    const saved = await saveStudents(newStudents);
-    if (!saved) return { error: "Failed to save your submission. Please try again." };
-    setStudents(newStudents);
-    return { success: true };
   }, [students]);
 
   const handleDelete = useCallback(async (studentId) => {
