@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { db, storage } from "./firebase.js";
-import { doc, getDoc, setDoc } from "firebase/firestore";
+import { doc, getDoc, setDoc, collection, getDocs, deleteDoc } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 
 const CAMPUSES = [
@@ -22,27 +22,43 @@ function minDateStr() { return "2026-01-01"; }
 function maxDateStr() { return "2026-12-31"; }
 
 // ─── Firebase helpers ──────────────────────────────────────────────────────
-// All student records live in a single Firestore document: "data/students"
-// Structure: { [studentId]: { name, campus, session, totalSteps, submittedDates[], dailyScreenshots:{} } }
+// Each student has their own Firestore document: collection "students", doc = studentId
+// This avoids the 1MB per-document limit entirely and scales to any number of students
 
-const DATA_REF = () => doc(db, "data", "students");
+
+const STUDENTS_COL = "students";
+const studentRef = (id) => doc(db, STUDENTS_COL, id);
 
 async function loadData() {
   try {
-    const snap = await getDoc(DATA_REF());
-    return { students: snap.exists() ? snap.data() : {} };
+    const snap = await getDocs(collection(db, STUDENTS_COL));
+    const students = {};
+    snap.forEach(d => { students[d.id] = d.data(); });
+    return { students };
   } catch (e) {
     console.error("Firebase load error:", e);
     return { students: {} };
   }
 }
 
-async function saveStudents(students) {
+// Save a single student document
+async function saveStudent(studentId, data) {
   try {
-    await setDoc(DATA_REF(), students);
+    await setDoc(studentRef(studentId), data);
     return true;
   } catch (e) {
     console.error("Firebase save error:", e);
+    return false;
+  }
+}
+
+// Delete a single student document
+async function deleteStudent(studentId) {
+  try {
+await deleteDoc(studentRef(studentId));
+    return true;
+  } catch (e) {
+    console.error("Firebase delete error:", e);
     return false;
   }
 }
@@ -907,10 +923,10 @@ export default function App() {
         ? { ...existing, name, campus, session, totalSteps: existing.totalSteps + stepCount, submittedDates: [...existing.submittedDates, date], dailyScreenshots: { ...prevScreenshots, [date]: { steps: stepCount, img: imgUrl } } }
         : { name, campus, session, totalSteps: stepCount, submittedDates: [date], dailyScreenshots: { [date]: { steps: stepCount, img: imgUrl } } };
 
-      const newStudents = { ...freshStudents, [studentId]: updatedStudent };
-      const saved = await saveStudents(newStudents);
+      const saved = await saveStudent(studentId, updatedStudent);
       if (!saved) return { error: "Failed to save your submission. Please try again." };
-      setStudents(newStudents);
+      // Update local state from the fresh snapshot + our new entry
+      setStudents({ ...freshStudents, [studentId]: updatedStudent });
       return { success: true };
     } finally {
       submittingRef.current = false;
@@ -918,10 +934,10 @@ export default function App() {
   }, [students]);
 
   const handleDelete = useCallback(async (studentId) => {
+    await deleteStudent(studentId);
     const newStudents = { ...students };
     delete newStudents[studentId];
     setStudents(newStudents);
-    await saveStudents(newStudents);
   }, [students]);
 
   const handleDeleteDay = useCallback(async (studentId, date) => {
@@ -936,20 +952,21 @@ export default function App() {
     const newStudents = { ...students };
     if (newDates.length === 0) {
       delete newStudents[studentId];
+      await deleteStudent(studentId);
     } else {
       newStudents[studentId] = { ...s, totalSteps: newTotal, submittedDates: newDates, dailyScreenshots: newScreenshots };
+      await saveStudent(studentId, newStudents[studentId]);
     }
     setStudents(newStudents);
-    await saveStudents(newStudents);
   }, [students]);
 
   // Edit student profile (name, campus, session) — does NOT touch step totals
   const handleEditStudent = useCallback(async (studentId, { name, campus, session }) => {
     const s = students[studentId];
     if (!s) return;
-    const newStudents = { ...students, [studentId]: { ...s, name, campus, session } };
-    setStudents(newStudents);
-    await saveStudents(newStudents);
+    const updated = { ...s, name, campus, session };
+    await saveStudent(studentId, updated);
+    setStudents({ ...students, [studentId]: updated });
   }, [students]);
 
   // Edit a specific day's step count and/or date — recalculates the student's total
@@ -964,20 +981,17 @@ export default function App() {
     delete oldScreenshots[oldDate];
     const newDates = s.submittedDates.filter(d => d !== oldDate);
     if (!newDates.includes(newDate)) newDates.push(newDate);
-    const newStudents = {
-      ...students,
-      [studentId]: {
-        ...s,
-        totalSteps: newTotal,
-        submittedDates: newDates,
-        dailyScreenshots: {
-          ...oldScreenshots,
-          [newDate]: { ...oldEntry, steps: newSteps },
-        },
+    const updatedS = {
+      ...s,
+      totalSteps: newTotal,
+      submittedDates: newDates,
+      dailyScreenshots: {
+        ...oldScreenshots,
+        [newDate]: { ...oldEntry, steps: newSteps },
       },
     };
-    setStudents(newStudents);
-    await saveStudents(newStudents);
+    await saveStudent(studentId, updatedS);
+    setStudents({ ...students, [studentId]: updatedS });
   }, [students]);
 
   const allList       = Object.values(students);
