@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect } from "react";
 import { db, storage } from "./firebase.js";
 import { doc, getDoc, setDoc, collection, getDocs, deleteDoc } from "firebase/firestore";
 import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
@@ -934,7 +934,12 @@ export default function App() {
   const [loading, setLoading]         = useState(true);
   const [adminAuthed, setAdminAuthed] = useState(false);
 
-  const submittingRef = React.useRef(false);
+  const submittingRef  = React.useRef(false);
+  const studentsRef    = React.useRef({});
+
+  useEffect(() => {
+    studentsRef.current = students;
+  }, [students]);
 
   useEffect(() => {
     loadData().then(({ students }) => { setStudents(students); setLoading(false); });
@@ -947,7 +952,7 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
-  const handleSubmit = useCallback(async (formData) => {
+  const handleSubmit = async (formData) => {
     const { studentId, name, campus, session, steps, date, screenshotFile } = formData;
     const stepCount = Number(steps);
 
@@ -966,7 +971,7 @@ export default function App() {
         }
       }
 
-      // Step 2: Load fresh data (bypass cache to avoid stale duplicate checks)
+      // Step 2: Load fresh data (bypass cache — always get latest before saving)
       let freshStudents = {};
       try {
         const result = await loadData({ forceRefresh: true });
@@ -1001,17 +1006,17 @@ export default function App() {
     } finally {
       submittingRef.current = false;
     }
-  }, [students]);
+  };
 
-  const handleDelete = useCallback(async (studentId) => {
+  const handleDelete = async (studentId) => {
     await deleteStudent(studentId);
-    const newStudents = { ...students };
+    const newStudents = { ...studentsRef.current };
     delete newStudents[studentId];
     setStudents(newStudents);
-  }, [students]);
+  };
 
-  const handleDeleteDay = useCallback(async (studentId, date) => {
-    const s = students[studentId];
+  const handleDeleteDay = async (studentId, date) => {
+    const s = studentsRef.current[studentId];
     if (!s) return;
     const entry = s.dailyScreenshots?.[date];
     const stepsToRemove = entry?.steps || 0;
@@ -1019,7 +1024,7 @@ export default function App() {
     const newScreenshots = { ...s.dailyScreenshots };
     delete newScreenshots[date];
     const newTotal = Math.max(0, s.totalSteps - stepsToRemove);
-    const newStudents = { ...students };
+    const newStudents = { ...studentsRef.current };
     if (newDates.length === 0) {
       delete newStudents[studentId];
       await deleteStudent(studentId);
@@ -1028,20 +1033,20 @@ export default function App() {
       await saveStudent(studentId, newStudents[studentId]);
     }
     setStudents(newStudents);
-  }, [students]);
+  };
 
   // Edit student profile (name, campus, session) — does NOT touch step totals
-  const handleEditStudent = useCallback(async (studentId, { name, campus, session }) => {
-    const s = students[studentId];
+  const handleEditStudent = async (studentId, { name, campus, session }) => {
+    const s = studentsRef.current[studentId];
     if (!s) return;
     const updated = { ...s, name, campus, session };
     await saveStudent(studentId, updated);
-    setStudents({ ...students, [studentId]: updated });
-  }, [students]);
+    setStudents({ ...studentsRef.current, [studentId]: updated });
+  };
 
   // Edit a specific day's step count and/or date — recalculates the student's total
-  const handleEditDay = useCallback(async (studentId, oldDate, newSteps, newDate) => {
-    const s = students[studentId];
+  const handleEditDay = async (studentId, oldDate, newSteps, newDate) => {
+    const s = studentsRef.current[studentId];
     if (!s) return;
     const oldSteps = s.dailyScreenshots?.[oldDate]?.steps || 0;
     const newTotal = Math.max(0, s.totalSteps - oldSteps + newSteps);
@@ -1061,8 +1066,8 @@ export default function App() {
       },
     };
     await saveStudent(studentId, updatedS);
-    setStudents({ ...students, [studentId]: updatedS });
-  }, [students]);
+    setStudents({ ...studentsRef.current, [studentId]: updatedS });
+  };
 
   const allList       = Object.values(students);
   const totalStudents = allList.length;
