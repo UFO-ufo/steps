@@ -29,11 +29,26 @@ function maxDateStr() { return "2026-12-31"; }
 const STUDENTS_COL = "students";
 const studentRef = (id) => doc(db, STUDENTS_COL, id);
 
-async function loadData() {
+const CACHE_KEY = "ttswc_cache";
+const CACHE_TTL = 25000; // 25 seconds
+
+async function loadData({ forceRefresh = false } = {}) {
+  // Return cached data immediately if it's fresh enough
+  if (!forceRefresh) {
+    try {
+      const raw = sessionStorage.getItem(CACHE_KEY);
+      if (raw) {
+        const { ts, students } = JSON.parse(raw);
+        if (Date.now() - ts < CACHE_TTL) return { students };
+      }
+    } catch (_) {}
+  }
   try {
     const snap = await getDocs(collection(db, STUDENTS_COL));
     const students = {};
     snap.forEach(d => { students[d.id] = d.data(); });
+    // Cache the result
+    try { sessionStorage.setItem(CACHE_KEY, JSON.stringify({ ts: Date.now(), students })); } catch (_) {}
     return { students };
   } catch (e) {
     console.error("Firebase load error:", e);
@@ -41,10 +56,15 @@ async function loadData() {
   }
 }
 
+function invalidateCache() {
+  try { sessionStorage.removeItem(CACHE_KEY); } catch (_) {}
+}
+
 // Save a single student document
 async function saveStudent(studentId, data) {
   try {
     await setDoc(studentRef(studentId), data);
+    invalidateCache(); // force next load to re-fetch
     return true;
   } catch (e) {
     console.error("Firebase save error:", e);
@@ -55,7 +75,8 @@ async function saveStudent(studentId, data) {
 // Delete a single student document
 async function deleteStudent(studentId) {
   try {
-await deleteDoc(studentRef(studentId));
+    await deleteDoc(studentRef(studentId));
+    invalidateCache();
     return true;
   } catch (e) {
     console.error("Firebase delete error:", e);
@@ -109,10 +130,11 @@ async function uploadScreenshot(file, studentId, date) {
 }
 
 // ─── Loader ────────────────────────────────────────────────────────────────
-function Loader() {
+function Loader({ message = "Loading..." }) {
   return (
-    <div style={{ display:"flex", justifyContent:"center", padding:"3rem" }}>
+    <div style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", padding:"4rem 2rem", gap:"1rem" }}>
       <div className="spinner" />
+      <div style={{ color:"var(--muted)", fontSize:"0.85rem", fontWeight:600 }}>{message}</div>
     </div>
   );
 }
@@ -916,12 +938,12 @@ export default function App() {
 
   useEffect(() => {
     loadData().then(({ students }) => { setStudents(students); setLoading(false); });
-    // Refresh leaderboard data every 30 seconds — but never during an active submission
+    // Refresh leaderboard data every 60 seconds — cache handles sub-minute reads
     const interval = setInterval(() => {
       if (!submittingRef.current) {
-        loadData().then(({ students }) => setStudents(students));
+        loadData({ forceRefresh: true }).then(({ students }) => setStudents(students));
       }
-    }, 30000);
+    }, 60000);
     return () => clearInterval(interval);
   }, []);
 
@@ -944,10 +966,10 @@ export default function App() {
         }
       }
 
-      // Step 2: Load fresh data
+      // Step 2: Load fresh data (bypass cache to avoid stale duplicate checks)
       let freshStudents = {};
       try {
-        const result = await loadData();
+        const result = await loadData({ forceRefresh: true });
         freshStudents = result.students;
       } catch (e) {
         console.error("Load threw:", e);
@@ -1198,7 +1220,7 @@ export default function App() {
       </div>
 
       <div className="content">
-        {loading ? <Loader /> :
+        {loading ? <Loader message="Loading challenge data..." /> :
           activeTab===0 ? <SubmitForm onSubmit={handleSubmit} students={students} /> :
           activeTab===1 ? <LeaderboardTable title="🏫 Campus Average Steps" students={students} groupBy="campus" /> :
           activeTab===2 ? <LeaderboardTable title="🏆 Top 10 Highest Steps" students={students} /> :
