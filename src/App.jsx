@@ -63,22 +63,46 @@ await deleteDoc(studentRef(studentId));
   }
 }
 
-// Upload a screenshot file to Firebase Storage, return the public download URL
+// Compress an image file in the browser before uploading
+// Reduces typical 2-4MB phone screenshots down to ~80-120KB
+function compressImage(file, maxWidth = 1280, quality = 0.75) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      const scale = Math.min(1, maxWidth / img.width);
+      const canvas = document.createElement("canvas");
+      canvas.width  = Math.round(img.width  * scale);
+      canvas.height = Math.round(img.height * scale);
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+      canvas.toBlob(
+        blob => resolve(blob || file),
+        "image/jpeg",
+        quality
+      );
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); resolve(file); };
+    img.src = url;
+  });
+}
+
+// Upload a screenshot to Firebase Storage, compressing it first
 // Retries once on failure to handle transient network issues
 async function uploadScreenshot(file, studentId, date) {
-  const mimeToExt = { "image/jpeg":"jpg", "image/png":"png", "image/webp":"webp", "image/gif":"gif", "image/heic":"heic" };
-  const ext = mimeToExt[file.type] || file.name.split(".").pop().toLowerCase() || "jpg";
-  const path = `screenshots/${studentId}/${date}_${Date.now()}.${ext}`;
+  const path = `screenshots/${studentId}/${date}_${Date.now()}.jpg`;
   for (let attempt = 0; attempt < 2; attempt++) {
     try {
+      const compressed = await compressImage(file);
       const storageRef = ref(storage, path);
-      await uploadBytes(storageRef, file);
+      await uploadBytes(storageRef, compressed, { contentType: "image/jpeg" });
       const url = await getDownloadURL(storageRef);
       return url;
     } catch (e) {
       console.error(`Screenshot upload error (attempt ${attempt + 1}):`, e);
       if (attempt === 1) return null;
-      await new Promise(r => setTimeout(r, 1500)); // wait 1.5s before retry
+      await new Promise(r => setTimeout(r, 1500));
     }
   }
   return null;

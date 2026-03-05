@@ -1,23 +1,14 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// STEP: Paste your Firebase config here
-//
-// 1. Go to https://console.firebase.google.com
-// 2. Open your project → Project Settings (gear icon) → General tab
-// 3. Scroll to "Your apps" → click the </> Web app icon
-// 4. Copy the firebaseConfig object and paste the values below
-// ─────────────────────────────────────────────────────────────────────────────
-
 import { initializeApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
 import { getStorage } from "firebase/storage";
 
 const firebaseConfig = {
-  apiKey:            "AIzaSyCvpXzX_LK_Ll1A79-dFEUPO5hWrF-duvY",
-  authDomain:        "tulsa-tech-walking.firebaseapp.com",
-  projectId:         "tulsa-tech-walking",
-  storageBucket:     "tulsa-tech-walking.firebasestorage.app",
-  messagingSenderId: "509364326649",
-  appId:             "1:509364326649:web:6a7b71dfd8ccbb6865d228",
+  apiKey: "AIzaSyDoe0mqD_sFniCFbCpYvJcsXi23n1B5Y6s",
+  authDomain: "tulsa-tech-walking-26.firebaseapp.com",
+  projectId: "tulsa-tech-walking-26",
+  storageBucket: "tulsa-tech-walking-26.firebasestorage.app",
+  messagingSenderId: "302597093486",
+  appId: "1:302597093486:web:bcf2d3f268b8fb2c2c0e7f"
 };
 
 const app = initializeApp(firebaseConfig);
