@@ -793,7 +793,11 @@ function SubmitForm({ onSubmit, students }) {
     setSubmitting(true);
     const result = await onSubmit({ ...form, studentId:sid, screenshotFile:screenshot });
     setSubmitting(false);
-    if (result?.error) { setSubmitError(result.error); return; }
+    if (result?.error) {
+      setSubmitError(result.error);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+      return;
+    }
     setSuccess(true);
     setForm({ studentId:"", name:"", date:today, steps:"", session:"", campus:"" });
     setScreenshot(null); setPreview(null);
@@ -903,31 +907,51 @@ export default function App() {
 
     submittingRef.current = true;
     try {
-      // Upload screenshot FIRST before touching the database
+      // Step 1: Upload screenshot to Firebase Storage
       let imgUrl = null;
       if (screenshotFile) {
-        imgUrl = await uploadScreenshot(screenshotFile, studentId, date);
-        if (!imgUrl) return { error: "Screenshot upload failed — please check your connection and try again." };
+        try {
+          imgUrl = await uploadScreenshot(screenshotFile, studentId, date);
+        } catch (e) {
+          console.error("Upload threw:", e);
+        }
+        if (!imgUrl) {
+          return { error: "Screenshot upload failed. Please check that Firebase Storage is enabled in your Firebase console (Build → Storage) and that your Storage rules allow writes. Then try again." };
+        }
       }
 
-      // Re-fetch fresh data right before saving to prevent stale-state overwrites
-      const { students: freshStudents } = await loadData();
-      const existing = freshStudents[studentId];
+      // Step 2: Load fresh data
+      let freshStudents = {};
+      try {
+        const result = await loadData();
+        freshStudents = result.students;
+      } catch (e) {
+        console.error("Load threw:", e);
+        return { error: "Could not reach the database. Please check your internet connection and try again." };
+      }
 
-      // Duplicate check using fresh data
+      // Step 3: Duplicate check
+      const existing = freshStudents[studentId];
       if (existing?.submittedDates?.includes(date))
         return { error: `Already submitted steps for ${date}. Only one submission per day is allowed.` };
 
+      // Step 4: Build updated student record
       const prevScreenshots = existing?.dailyScreenshots || {};
       const updatedStudent = existing
         ? { ...existing, name, campus, session, totalSteps: existing.totalSteps + stepCount, submittedDates: [...existing.submittedDates, date], dailyScreenshots: { ...prevScreenshots, [date]: { steps: stepCount, img: imgUrl } } }
         : { name, campus, session, totalSteps: stepCount, submittedDates: [date], dailyScreenshots: { [date]: { steps: stepCount, img: imgUrl } } };
 
+      // Step 5: Save to Firestore
       const saved = await saveStudent(studentId, updatedStudent);
-      if (!saved) return { error: "Failed to save your submission. Please try again." };
-      // Update local state from the fresh snapshot + our new entry
+      if (!saved) {
+        return { error: "Saved screenshot but failed to save to database. Please check your Firestore rules allow writes to the 'students' collection, then try again." };
+      }
+
       setStudents({ ...freshStudents, [studentId]: updatedStudent });
       return { success: true };
+    } catch (e) {
+      console.error("Unexpected submit error:", e);
+      return { error: `Unexpected error: ${e.message || "Unknown error"}. Please try again.` };
     } finally {
       submittingRef.current = false;
     }
