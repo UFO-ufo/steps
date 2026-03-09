@@ -148,49 +148,43 @@ function MedalIcon({ rank }) {
 // ─── Leaderboard ───────────────────────────────────────────────────────────
 function LeaderboardTable({ title, students, filter, groupBy }) {
   if (groupBy === "campus") {
+    // Build campus map: for each campus, sum up every individual daily submission
     const campusMap = {};
     Object.values(students).forEach(s => {
-      if (!campusMap[s.campus]) campusMap[s.campus] = { total:0, count:0 };
-      campusMap[s.campus].total += s.totalSteps;
-      campusMap[s.campus].count += 1;
+      if (!campusMap[s.campus]) campusMap[s.campus] = { totalDailySteps:0, totalDays:0, studentCount:0 };
+      const days = s.submittedDates?.length || 0;
+      campusMap[s.campus].totalDailySteps += s.totalSteps;
+      campusMap[s.campus].totalDays      += days;
+      campusMap[s.campus].studentCount   += 1;
     });
 
-    const allStudents = Object.values(students);
-    const globalMean = allStudents.length
-      ? allStudents.reduce((sum, s) => sum + s.totalSteps, 0) / allStudents.length
-      : 0;
-    const campusEntries = Object.values(campusMap);
-    const avgCampusSize = campusEntries.length
-      ? campusEntries.reduce((sum, c) => sum + c.count, 0) / campusEntries.length
-      : 1;
-    const C = Math.max(1, Math.round(avgCampusSize));
-
+    // Daily avg per campus = total steps across all days / total days logged
     const rows = Object.entries(campusMap)
-      .map(([campus, { total, count }]) => ({
+      .map(([campus, { totalDailySteps, totalDays, studentCount }]) => ({
         campus,
-        avg: Math.round((C * globalMean + total) / (C + count)),
-        rawAvg: Math.round(total / count),
-        count,
+        dailyAvg: totalDays > 0 ? Math.round(totalDailySteps / totalDays) : 0,
+        studentCount,
+        totalDays,
       }))
-      .sort((a, b) => b.avg - a.avg);
+      .sort((a, b) => b.dailyAvg - a.dailyAvg);
 
     if (!rows.length) return <div className="empty-state"><span>🏃</span><p>No data yet. Be the first to submit!</p></div>;
     return (
       <div className="leaderboard-wrap">
         <h2 className="lb-title">{title}</h2>
         <p style={{ color:"var(--muted)", fontSize:"0.8rem", marginBottom:"1.25rem", marginTop:"-0.75rem" }}>
-          Ranked by Bayesian average — protects small campuses from outliers while fairly rewarding consistent effort.
+          Ranked by average steps per day across all submissions from that campus.
         </p>
         <table className="lb-table">
-          <thead><tr><th>Rank</th><th>Campus</th><th>Score</th><th>Raw Avg</th><th>Students</th></tr></thead>
+          <thead><tr><th>Rank</th><th>Campus</th><th>Avg Steps/Day</th><th>Total Days</th><th>Students</th></tr></thead>
           <tbody>
             {rows.map((r,i) => (
               <tr key={r.campus} className={i<3?`top-${i+1}`:""}>
                 <td><MedalIcon rank={i+1}/></td>
                 <td>{r.campus}</td>
-                <td className="steps-cell">{r.avg.toLocaleString()}</td>
-                <td style={{ color:"var(--muted)", fontSize:"0.85rem" }}>{r.rawAvg.toLocaleString()}</td>
-                <td>{r.count}</td>
+                <td className="steps-cell">{r.dailyAvg.toLocaleString()}</td>
+                <td style={{ color:"var(--muted)", fontSize:"0.85rem" }}>{r.totalDays}</td>
+                <td>{r.studentCount}</td>
               </tr>
             ))}
           </tbody>
@@ -674,13 +668,32 @@ function MySubmissions({ students }) {
   const [result, setResult]       = useState(null);   // null | "found" | "notfound" | "mismatch"
   const [student, setStudent]     = useState(null);
 
+  function normalize(str) {
+    return str.trim().toLowerCase().replace(/\s+/g, " ");
+  }
+
   function handleLookup() {
     const sid = studentId.trim();
-    const nm  = name.trim().toLowerCase();
+    const nm  = normalize(name);
     if (!sid || !nm) return;
+
+    // Students object may still be loading
+    if (Object.keys(students).length === 0) {
+      setResult("notfound");
+      setStudent(null);
+      return;
+    }
+
     const s = students[sid];
     if (!s) { setResult("notfound"); setStudent(null); return; }
-    if (s.name.toLowerCase() !== nm) { setResult("mismatch"); setStudent(null); return; }
+
+    // Case-insensitive, whitespace-normalized name match
+    const storedName = normalize(s.name);
+    if (storedName !== nm && !storedName.includes(nm) && !nm.includes(storedName)) {
+      setResult("mismatch");
+      setStudent(null);
+      return;
+    }
     setResult("found");
     setStudent({ ...s, id: sid });
   }
@@ -724,10 +737,10 @@ function MySubmissions({ students }) {
       </div>
 
       {result === "notfound" && (
-        <div className="error-banner">⚠️ No record found for that Student ID. Have you submitted steps yet?</div>
+        <div className="error-banner">⚠️ No record found for that Student ID. Make sure you&apos;re entering the exact same Student ID you used when submitting.</div>
       )}
       {result === "mismatch" && (
-        <div className="error-banner">⚠️ The name you entered doesn't match our records for that Student ID.</div>
+        <div className="error-banner">⚠️ The name you entered doesn't match our records for that Student ID. Make sure you enter your name exactly as you did when you first submitted steps.</div>
       )}
 
       {result === "found" && student && (
@@ -746,7 +759,8 @@ function MySubmissions({ students }) {
             </div>
             <div style={{ display:"flex", gap:"1.5rem", flexWrap:"wrap" }}>
               <div><span style={{ fontFamily:"'Bebas Neue',cursive", fontSize:"1.3rem", color:"var(--accent2)" }}>{student.submittedDates?.length || 0}</span> <span style={{ color:"var(--muted)", fontSize:"0.8rem" }}>Days Logged</span></div>
-              <div><span style={{ fontFamily:"'Bebas Neue',cursive", fontSize:"1.3rem", color:"var(--accent2)" }}>{student.submittedDates?.length ? Math.round(student.totalSteps / student.submittedDates.length).toLocaleString() : 0}</span> <span style={{ color:"var(--muted)", fontSize:"0.8rem" }}>Avg Steps/Day</span></div>
+              <div><span style={{ fontFamily:"'Bebas Neue',cursive", fontSize:"1.3rem", color:"var(--accent2)" }}>{student.submittedDates?.length ? Math.round(student.totalSteps / student.submittedDates.length).toLocaleString() : 0}</span> <span style={{ color:"var(--muted)", fontSize:"0.8rem" }}>Daily Avg Steps</span></div>
+              <div><span style={{ fontFamily:"'Bebas Neue',cursive", fontSize:"1.3rem", color:"var(--accent2)" }}>{(() => { const days = student.submittedDates; if (!days?.length) return 0; const sorted = [...days].sort(); const first = new Date(sorted[0]); const last = new Date(sorted[sorted.length-1]); const span = Math.max(1, Math.round((last-first)/(1000*60*60*24))+1); return span; })()}</span> <span style={{ color:"var(--muted)", fontSize:"0.8rem" }}>Day Streak Span</span></div>
             </div>
           </div>
 
