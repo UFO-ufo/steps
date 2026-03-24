@@ -5,7 +5,7 @@ import { ref, uploadBytes, getDownloadURL } from "firebase/storage";
 
 const CAMPUSES = [
   "Lemley Memorial", "Broken Arrow", "Owasso", "Peoria",
-  "Riverside", "Sand Springs", "Health Sciences Center",
+  "Riverside", "Sand Springs", "Health Sciences Center", "High School Extension Programs",
 ];
 const SESSIONS = ["AM", "PM", "All Day"];
 const TABS = [
@@ -424,7 +424,7 @@ function AdminPanel({ students, onDelete, onDeleteDay, onEditStudent, onEditDay,
         <EditStudentModal
           studentId={editStudent.studentId}
           student={editStudent.student}
-          campuses={["Lemley Memorial","Broken Arrow","Owasso","Peoria","Riverside","Sand Springs","Health Sciences Center"]}
+          campuses={["Lemley Memorial","Broken Arrow","Owasso","Peoria","Riverside","Sand Springs","Health Sciences Center","High School Extension Programs"]}
           sessions={["AM","PM","All Day"]}
           onSave={async (id, data) => {
             await onEditStudent(id, data);
