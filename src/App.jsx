@@ -18,8 +18,8 @@ const ADMIN_USER = "Student Advisory";
 const ADMIN_PASS = "Hello.com";
 
 function todayStr() { return new Date().toISOString().split("T")[0]; }
-function minDateStr() { return "2026-01-01"; }
-function maxDateStr() { return "2026-12-31"; }
+function minDateStr() { return "2026-04-01"; }
+function maxDateStr() { return "2026-04-30"; }
 
 // ─── Firebase helpers ──────────────────────────────────────────────────────
 // Each student has their own Firestore document: collection "students", doc = studentId
@@ -345,7 +345,7 @@ function EditDayModal({ studentId, date, entry, existingDates, onSave, onClose }
           <img src={entry.img} alt="Screenshot" style={{ width:"100%", maxHeight:"160px", objectFit:"cover", borderRadius:"8px", marginBottom:"1rem", border:"1px solid var(--border)" }} />
         )}
         <div className="field" style={{ marginBottom:"1rem" }}>
-          <label>Date <span className="req-note">* Any date in 2026</span></label>
+          <label>Date <span className="req-note">* April 2026 only</span></label>
           <input type="date" value={newDate} min="2026-01-01" max="2026-12-31" onChange={e => { setNewDate(e.target.value); setErr(""); }} />
         </div>
         <div className="field" style={{ marginBottom:"1rem" }}>
@@ -889,7 +889,7 @@ function SubmitForm({ onSubmit, students }) {
             {errors.name && <span className="err">{errors.name}</span>}
           </div>
           <div className={`field ${errors.date?"has-error":""}`}>
-            <label>Date Steps Were Taken <span className="req-note">* Any date in 2026</span></label>
+            <label>Date Steps Were Taken <span className="req-note">* April 2026 only</span></label>
             <input type="date" name="date" value={form.date} min={minDate} max={maxDate} onChange={handleChange} />
             {errors.date && <span className="err">{errors.date}</span>}
           </div>
