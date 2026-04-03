@@ -9,7 +9,7 @@ const CAMPUSES = [
 ];
 const SESSIONS = ["AM", "PM", "All Day"];
 const TABS = [
-  "Submit Steps", "Campus Average", "Campus Total", "Highest Steps",
+  "Submit Steps", "Campus Average", "Highest Steps",
   "Highest Steps AM", "Highest Steps PM", "Highest Steps All Day",
   "All Students", "My Submissions", "Admin",
 ];
@@ -176,13 +176,14 @@ function LeaderboardTable({ title, students, filter, groupBy }) {
           Ranked by average steps per day across all submissions from that campus.
         </p>
         <table className="lb-table">
-          <thead><tr><th>Rank</th><th>Campus</th><th>Avg Steps/Day</th><th>Students</th></tr></thead>
+          <thead><tr><th>Rank</th><th>Campus</th><th>Avg Steps/Day</th><th>Total Days</th><th>Students</th></tr></thead>
           <tbody>
             {rows.map((r,i) => (
               <tr key={r.campus} className={i<3?`top-${i+1}`:""}>
                 <td><MedalIcon rank={i+1}/></td>
                 <td>{r.campus}</td>
                 <td className="steps-cell">{r.dailyAvg.toLocaleString()}</td>
+                <td style={{ color:"var(--muted)", fontSize:"0.85rem" }}>{r.totalDays}</td>
                 <td>{r.studentCount}</td>
               </tr>
             ))}
@@ -561,59 +562,6 @@ function AdminPanel({ students, onDelete, onDeleteDay, onEditStudent, onEditDay,
           </table>
         </div>
       )}
-    </div>
-  );
-}
-
-// ─── Campus Total Steps Leaderboard ────────────────────────────────────────
-function CampusTotalSteps({ students }) {
-  const campusMap = {};
-  Object.values(students).forEach(s => {
-    if (!campusMap[s.campus]) campusMap[s.campus] = { totalSteps: 0, studentCount: 0, totalDays: 0 };
-    campusMap[s.campus].totalSteps   += s.totalSteps;
-    campusMap[s.campus].studentCount += 1;
-    campusMap[s.campus].totalDays    += s.submittedDates?.length || 0;
-  });
-
-  const rows = Object.entries(campusMap)
-    .map(([campus, { totalSteps, studentCount, totalDays }]) => ({ campus, totalSteps, studentCount, totalDays }))
-    .sort((a, b) => b.totalSteps - a.totalSteps);
-
-  const grandTotal = rows.reduce((sum, r) => sum + r.totalSteps, 0);
-
-  if (!rows.length) return <div className="empty-state"><span>🏃</span><p>No data yet. Be the first to submit!</p></div>;
-
-  return (
-    <div className="leaderboard-wrap">
-      <h2 className="lb-title">🏫 Campus Total</h2>
-      <p style={{ color:"var(--muted)", fontSize:"0.8rem", marginBottom:"1.25rem", marginTop:"-0.75rem" }}>
-        All steps from every student at each campus added together.
-      </p>
-
-      {/* Grand total banner */}
-      <div style={{ background:"rgba(232,28,28,0.1)", border:"1px solid rgba(232,28,28,0.3)", borderRadius:"12px", padding:"1rem 1.5rem", marginBottom:"1.5rem", display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:"0.5rem" }}>
-        <span style={{ fontWeight:700, fontSize:"0.9rem", color:"var(--muted)", textTransform:"uppercase", letterSpacing:"0.08em" }}>🌍 All Campuses Combined</span>
-        <span style={{ fontFamily:"'Bebas Neue',cursive", fontSize:"2rem", color:"var(--accent)", letterSpacing:"0.05em" }}>{grandTotal.toLocaleString()} steps</span>
-      </div>
-
-      <table className="lb-table">
-        <thead>
-          <tr><th>Rank</th><th>Campus</th><th>Total Steps</th><th>Students</th><th>% of Total</th></tr>
-        </thead>
-        <tbody>
-          {rows.map((r, i) => (
-            <tr key={r.campus} className={i<3?`top-${i+1}`:""}>
-              <td><MedalIcon rank={i+1}/></td>
-              <td><strong>{r.campus}</strong></td>
-              <td className="steps-cell">{r.totalSteps.toLocaleString()}</td>
-              <td>{r.studentCount}</td>
-              <td style={{ color:"var(--muted)", fontSize:"0.85rem" }}>
-                {grandTotal > 0 ? ((r.totalSteps / grandTotal) * 100).toFixed(1) : 0}%
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
     </div>
   );
 }
@@ -1283,8 +1231,8 @@ export default function App() {
       <div className="tabs-bar">
         <div className="tabs-inner">
           {TABS.map((tab, i) => (
-            <button key={tab} className={`tab-btn ${i===9?"admin-tab":""} ${activeTab===i?"active":""}`} onClick={() => { setActiveTab(i); if(i!==9) setAdminAuthed(false); }}>
-              {i===9 ? "🔒 Admin" : tab}
+            <button key={tab} className={`tab-btn ${i===8?"admin-tab":""} ${activeTab===i?"active":""}`} onClick={() => { setActiveTab(i); if(i!==8) setAdminAuthed(false); }}>
+              {i===8 ? "🔒 Admin" : tab}
             </button>
           ))}
         </div>
@@ -1300,8 +1248,7 @@ export default function App() {
           activeTab===5 ? <LeaderboardTable title="☀️ Top 10 All Day Students" students={students} filter="All Day" /> :
           activeTab===6 ? <AllStudentsLeaderboard students={students} /> :
           activeTab===7 ? <MySubmissions students={students} /> :
-          activeTab===8 ? <CampusTotalSteps students={students} /> :
-          activeTab===9 ? (
+          activeTab===8 ? (
             adminAuthed
               ? <AdminPanel students={students} onDelete={handleDelete} onDeleteDay={handleDeleteDay} onEditStudent={handleEditStudent} onEditDay={handleEditDay} onLogout={() => { setAdminAuthed(false); setActiveTab(0); }} />
               : <AdminLogin onLogin={() => setAdminAuthed(true)} />
