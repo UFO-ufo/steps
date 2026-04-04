@@ -9,7 +9,7 @@ const CAMPUSES = [
 ];
 const SESSIONS = ["AM", "PM", "All Day"];
 const TABS = [
-  "Submit Steps", "Campus Average", "Highest Steps",
+  "Submit Steps", "Campus Performance", "Campus Total", "Highest Steps",
   "Highest Steps AM", "Highest Steps PM", "Highest Steps All Day",
   "All Students", "My Submissions", "Admin",
 ];
@@ -148,42 +148,47 @@ function MedalIcon({ rank }) {
 // ─── Leaderboard ───────────────────────────────────────────────────────────
 function LeaderboardTable({ title, students, filter, groupBy }) {
   if (groupBy === "campus") {
-    // Build campus map: for each campus, sum up every individual daily submission
-    const campusMap = {};
+    // Group students by campus
+    const campusStudents = {};
     Object.values(students).forEach(s => {
-      if (!campusMap[s.campus]) campusMap[s.campus] = { totalDailySteps:0, totalDays:0, studentCount:0 };
-      const days = s.submittedDates?.length || 0;
-      campusMap[s.campus].totalDailySteps += s.totalSteps;
-      campusMap[s.campus].totalDays      += days;
-      campusMap[s.campus].studentCount   += 1;
+      if (!campusStudents[s.campus]) campusStudents[s.campus] = [];
+      campusStudents[s.campus].push(s.totalSteps);
     });
 
-    // Daily avg per campus = total steps across all days / total days logged
-    const rows = Object.entries(campusMap)
-      .map(([campus, { totalDailySteps, totalDays, studentCount }]) => ({
-        campus,
-        dailyAvg: totalDays > 0 ? Math.round(totalDailySteps / totalDays) : 0,
-        studentCount,
-        totalDays,
-      }))
-      .sort((a, b) => b.dailyAvg - a.dailyAvg);
+    // Sort each campus's students by steps descending
+    Object.keys(campusStudents).forEach(c => {
+      campusStudents[c].sort((a, b) => b - a);
+    });
+
+    // Find the minimum student count across all campuses, floor at 2
+    const campusSizes = Object.values(campusStudents).map(arr => arr.length);
+    const minSize = Math.max(2, Math.min(...campusSizes));
+
+    // Each campus is scored by averaging its top N students where N = minSize
+    // This levels the playing field — no campus benefits from having more students
+    const rows = Object.entries(campusStudents)
+      .map(([campus, stepsList]) => {
+        const topN = stepsList.slice(0, minSize);
+        const avg  = Math.round(topN.reduce((a, b) => a + b, 0) / topN.length);
+        return { campus, avg, studentCount: stepsList.length, topN: topN.length };
+      })
+      .sort((a, b) => b.avg - a.avg);
 
     if (!rows.length) return <div className="empty-state"><span>🏃</span><p>No data yet. Be the first to submit!</p></div>;
     return (
       <div className="leaderboard-wrap">
         <h2 className="lb-title">{title}</h2>
         <p style={{ color:"var(--muted)", fontSize:"0.8rem", marginBottom:"1.25rem", marginTop:"-0.75rem" }}>
-          Ranked by average steps per day across all submissions from that campus.
+          Each campus is ranked by the average total steps of their top {minSize} student{minSize !== 1 ? "s" : ""}, ensuring a fair comparison regardless of campus size.
         </p>
         <table className="lb-table">
-          <thead><tr><th>Rank</th><th>Campus</th><th>Avg Steps/Day</th><th>Total Days</th><th>Students</th></tr></thead>
+          <thead><tr><th>Rank</th><th>Campus</th><th>Top {minSize} Student Avg</th><th>Total Students</th></tr></thead>
           <tbody>
             {rows.map((r,i) => (
               <tr key={r.campus} className={i<3?`top-${i+1}`:""}>
                 <td><MedalIcon rank={i+1}/></td>
                 <td>{r.campus}</td>
-                <td className="steps-cell">{r.dailyAvg.toLocaleString()}</td>
-                <td style={{ color:"var(--muted)", fontSize:"0.85rem" }}>{r.totalDays}</td>
+                <td className="steps-cell">{r.avg.toLocaleString()}</td>
                 <td>{r.studentCount}</td>
               </tr>
             ))}
@@ -562,6 +567,59 @@ function AdminPanel({ students, onDelete, onDeleteDay, onEditStudent, onEditDay,
           </table>
         </div>
       )}
+    </div>
+  );
+}
+
+// ─── Campus Total Steps Leaderboard ────────────────────────────────────────
+function CampusTotalSteps({ students }) {
+  // One entry per campus — sum every student's totalSteps for that campus
+  const campusMap = {};
+  Object.values(students).forEach(s => {
+    if (!campusMap[s.campus]) campusMap[s.campus] = { totalSteps: 0, studentCount: 0 };
+    campusMap[s.campus].totalSteps   += s.totalSteps;
+    campusMap[s.campus].studentCount += 1;
+  });
+
+  const rows = Object.entries(campusMap)
+    .map(([campus, { totalSteps, studentCount }]) => ({ campus, totalSteps, studentCount }))
+    .sort((a, b) => b.totalSteps - a.totalSteps);
+
+  const grandTotal = rows.reduce((sum, r) => sum + r.totalSteps, 0);
+
+  if (!rows.length) return <div className="empty-state"><span>🏃</span><p>No data yet. Be the first to submit!</p></div>;
+
+  return (
+    <div className="leaderboard-wrap">
+      <h2 className="lb-title">🏫 Campus Total</h2>
+      <p style={{ color:"var(--muted)", fontSize:"0.8rem", marginBottom:"1.25rem", marginTop:"-0.75rem" }}>
+        Every student's steps from each campus added together into one total. Max 8 campuses.
+      </p>
+
+      {/* Grand total banner */}
+      <div style={{ background:"rgba(232,28,28,0.1)", border:"1px solid rgba(232,28,28,0.3)", borderRadius:"12px", padding:"1rem 1.5rem", marginBottom:"1.5rem", display:"flex", justifyContent:"space-between", alignItems:"center", flexWrap:"wrap", gap:"0.5rem" }}>
+        <span style={{ fontWeight:700, fontSize:"0.9rem", color:"var(--muted)", textTransform:"uppercase", letterSpacing:"0.08em" }}>🌍 All Campuses Combined</span>
+        <span style={{ fontFamily:"'Bebas Neue',cursive", fontSize:"2rem", color:"var(--accent)", letterSpacing:"0.05em" }}>{grandTotal.toLocaleString()} steps</span>
+      </div>
+
+      <table className="lb-table">
+        <thead>
+          <tr><th>Rank</th><th>Campus</th><th>Total Steps</th><th>Students</th><th>% of Total</th></tr>
+        </thead>
+        <tbody>
+          {rows.map((r, i) => (
+            <tr key={r.campus} className={i<3?`top-${i+1}`:""}>
+              <td><MedalIcon rank={i+1}/></td>
+              <td><strong>{r.campus}</strong></td>
+              <td className="steps-cell">{r.totalSteps.toLocaleString()}</td>
+              <td>{r.studentCount}</td>
+              <td style={{ color:"var(--muted)", fontSize:"0.85rem" }}>
+                {grandTotal > 0 ? ((r.totalSteps / grandTotal) * 100).toFixed(1) : 0}%
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -1231,8 +1289,8 @@ export default function App() {
       <div className="tabs-bar">
         <div className="tabs-inner">
           {TABS.map((tab, i) => (
-            <button key={tab} className={`tab-btn ${i===8?"admin-tab":""} ${activeTab===i?"active":""}`} onClick={() => { setActiveTab(i); if(i!==8) setAdminAuthed(false); }}>
-              {i===8 ? "🔒 Admin" : tab}
+            <button key={tab} className={`tab-btn ${i===9?"admin-tab":""} ${activeTab===i?"active":""}`} onClick={() => { setActiveTab(i); if(i!==9) setAdminAuthed(false); }}>
+              {i===9 ? "🔒 Admin" : tab}
             </button>
           ))}
         </div>
@@ -1241,14 +1299,15 @@ export default function App() {
       <div className="content">
         {loading ? <Loader message="Loading challenge data..." /> :
           activeTab===0 ? <SubmitForm onSubmit={handleSubmit} students={students} /> :
-          activeTab===1 ? <LeaderboardTable title="🏫 Campus Average Steps" students={students} groupBy="campus" /> :
+          activeTab===1 ? <LeaderboardTable title="🏫 Campus Performance Rankings" students={students} groupBy="campus" /> :
           activeTab===2 ? <LeaderboardTable title="🏆 Top 10 Highest Steps" students={students} /> :
           activeTab===3 ? <LeaderboardTable title="🌅 Top 10 AM Students" students={students} filter="AM" /> :
           activeTab===4 ? <LeaderboardTable title="🌆 Top 10 PM Students" students={students} filter="PM" /> :
           activeTab===5 ? <LeaderboardTable title="☀️ Top 10 All Day Students" students={students} filter="All Day" /> :
           activeTab===6 ? <AllStudentsLeaderboard students={students} /> :
           activeTab===7 ? <MySubmissions students={students} /> :
-          activeTab===8 ? (
+          activeTab===8 ? <CampusTotalSteps students={students} /> :
+          activeTab===9 ? (
             adminAuthed
               ? <AdminPanel students={students} onDelete={handleDelete} onDeleteDay={handleDeleteDay} onEditStudent={handleEditStudent} onEditDay={handleEditDay} onLogout={() => { setAdminAuthed(false); setActiveTab(0); }} />
               : <AdminLogin onLogin={() => setAdminAuthed(true)} />
