@@ -148,47 +148,55 @@ function MedalIcon({ rank }) {
 // ─── Leaderboard ───────────────────────────────────────────────────────────
 function LeaderboardTable({ title, students, filter, groupBy }) {
   if (groupBy === "campus") {
-    // For each campus, compute each student's daily average (totalSteps / daysLogged)
+    // Step 1: compute each student's personal daily average (totalSteps / days logged)
     const campusStudents = {};
     Object.values(students).forEach(s => {
       if (!campusStudents[s.campus]) campusStudents[s.campus] = [];
       const days = s.submittedDates?.length || 1;
-      const dailyAvg = s.totalSteps / days;
-      campusStudents[s.campus].push(dailyAvg);
+      campusStudents[s.campus].push(s.totalSteps / days);
     });
 
-    // Sort each campus's daily averages descending (best performers first)
-    Object.keys(campusStudents).forEach(c => {
-      campusStudents[c].sort((a, b) => b - a);
-    });
+    // Step 2: global mean — average daily steps across every student on every campus
+    const allDailyAvgs = Object.values(campusStudents).flat();
+    const globalMean = allDailyAvgs.length
+      ? allDailyAvgs.reduce((a, b) => a + b, 0) / allDailyAvgs.length
+      : 0;
 
-    // Fair comparison: use only top N students per campus where N = smallest campus size (min 2)
-    const campusSizes = Object.values(campusStudents).map(arr => arr.length);
-    const minSize = Math.max(2, Math.min(...campusSizes));
+    // Step 3: confidence weight C = average campus size
+    // Small campuses (few submissions) get pulled toward the global mean
+    // Large campuses (many submissions) are judged on their own data
+    // Low individual submissions don't tank a big campus — they just nudge the average slightly
+    const campusSizes = Object.values(campusStudents).map(a => a.length);
+    const avgSize = campusSizes.reduce((a, b) => a + b, 0) / campusSizes.length;
+    const C = Math.max(1, Math.round(avgSize));
 
+    // Step 4: Bayesian score = (C × globalMean + sum of daily avgs) / (C + n)
     const rows = Object.entries(campusStudents)
       .map(([campus, dailyAvgs]) => {
-        const topN   = dailyAvgs.slice(0, minSize);
-        const avg    = Math.round(topN.reduce((a, b) => a + b, 0) / topN.length);
-        return { campus, avg, studentCount: dailyAvgs.length };
+        const n        = dailyAvgs.length;
+        const sumAvgs  = dailyAvgs.reduce((a, b) => a + b, 0);
+        const score    = Math.round((C * globalMean + sumAvgs) / (C + n));
+        const rawAvg   = Math.round(sumAvgs / n);
+        return { campus, score, rawAvg, studentCount: n };
       })
-      .sort((a, b) => b.avg - a.avg);
+      .sort((a, b) => b.score - a.score);
 
     if (!rows.length) return <div className="empty-state"><span>🏃</span><p>No data yet. Be the first to submit!</p></div>;
     return (
       <div className="leaderboard-wrap">
         <h2 className="lb-title">{title}</h2>
         <p style={{ color:"var(--muted)", fontSize:"0.8rem", marginBottom:"1.25rem", marginTop:"-0.75rem" }}>
-          Campus average based on campus size — ranked by each student's daily step average, fairly adjusted so larger campuses don't have an advantage.
+          Campus average based on campus size — more submissions strengthen a campus's score while low outliers are softened, giving every campus a fair shot.
         </p>
         <table className="lb-table">
-          <thead><tr><th>Rank</th><th>Campus</th><th>Daily Avg Steps</th><th>Students</th></tr></thead>
+          <thead><tr><th>Rank</th><th>Campus</th><th>Daily Avg Steps</th><th>Raw Avg</th><th>Students</th></tr></thead>
           <tbody>
             {rows.map((r,i) => (
               <tr key={r.campus} className={i<3?`top-${i+1}`:""}>
                 <td><MedalIcon rank={i+1}/></td>
                 <td>{r.campus}</td>
-                <td className="steps-cell">{r.avg.toLocaleString()}</td>
+                <td className="steps-cell">{r.score.toLocaleString()}</td>
+                <td style={{ color:"var(--muted)", fontSize:"0.85rem" }}>{r.rawAvg.toLocaleString()}</td>
                 <td>{r.studentCount}</td>
               </tr>
             ))}
